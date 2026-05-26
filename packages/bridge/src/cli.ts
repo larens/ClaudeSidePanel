@@ -222,6 +222,10 @@ export class CLISession extends EventEmitter {
     }
   }
 
+  setResumeId(id: string): void {
+    this.cliSessionId = id;
+  }
+
   kill(): void {
     if (this.process) {
       this.process.kill("SIGTERM");

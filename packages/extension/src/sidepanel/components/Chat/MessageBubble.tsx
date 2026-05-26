@@ -6,9 +6,11 @@ import { ToolCallCard } from "./ToolCallCard";
 interface Props {
   message: Message;
   onRetry?: (messageId: string) => void;
+  /** When true, only render dots (no vertical line) — line is provided by parent timeline */
+  timelineDotsOnly?: boolean;
 }
 
-export function MessageBubble({ message, onRetry }: Props) {
+export function MessageBubble({ message, onRetry, timelineDotsOnly }: Props) {
   if (message.role === "system") {
     return (
       <div className="flex justify-center animate-fade-in">
@@ -20,6 +22,9 @@ export function MessageBubble({ message, onRetry }: Props) {
   }
 
   const isUser = message.role === "user";
+  const hasTimelineItems =
+    !isUser &&
+    (message.thinking || (message.toolCalls && message.toolCalls.length > 0));
 
   return (
     <div
@@ -28,7 +33,7 @@ export function MessageBubble({ message, onRetry }: Props) {
       <div
         className={`max-w-[85%] relative ${
           isUser
-            ? "bg-claude-accent/15 text-claude-text rounded-2xl rounded-br-md px-3.5 py-2.5"
+            ? "bg-claude-surface-raised text-claude-text rounded-2xl rounded-br-md px-3.5 py-2.5 border border-claude-border/10"
             : "text-claude-text"
         }`}
       >
@@ -45,15 +50,39 @@ export function MessageBubble({ message, onRetry }: Props) {
           </>
         ) : (
           <div className="space-y-2">
-            {/* Thinking block */}
-            {message.thinking && <ThinkingBlock text={message.thinking} />}
+            {/* Timeline items — dots only when parent provides the line */}
+            {hasTimelineItems && (
+              <div className="relative">
+                {!timelineDotsOnly && (
+                  <div
+                    className="absolute left-[3px] top-0 bottom-0 w-[1.5px] rounded-full"
+                    style={{ backgroundColor: "rgba(136,136,136,0.25)" }}
+                  />
+                )}
 
-            {/* Tool calls */}
-            {message.toolCalls && message.toolCalls.length > 0 && (
-              <div className="space-y-1.5">
-                {message.toolCalls.map((tc) => (
-                  <ToolCallCard key={tc.id} toolCall={tc} />
-                ))}
+                {/* Thinking block */}
+                {message.thinking && (
+                  <div className="relative flex gap-2.5 pb-2">
+                    <span className="relative z-10 w-[7px] h-[7px] rounded-full bg-claude-muted shrink-0 mt-[11px]" />
+                    <div className="flex-1 min-w-0">
+                      <ThinkingBlock text={message.thinking} />
+                    </div>
+                  </div>
+                )}
+
+                {/* Tool calls */}
+                {message.toolCalls && message.toolCalls.length > 0 && (
+                  <div className="space-y-1.5">
+                    {message.toolCalls.map((tc) => (
+                      <div key={tc.id} className="relative flex gap-2.5">
+                        <span className="relative z-10 w-[7px] h-[7px] rounded-full bg-claude-success shrink-0 mt-[11px]" />
+                        <div className="flex-1 min-w-0">
+                          <ToolCallCard toolCall={tc} />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
 
@@ -165,7 +194,7 @@ function ThinkingBlock({ text }: { text: string }) {
   const [expanded, setExpanded] = useState(false);
 
   return (
-    <div className="bg-claude-surface/50 border border-claude-border/30 rounded-lg overflow-hidden">
+    <div className="bg-claude-surface/50 rounded-lg overflow-hidden">
       <button
         onClick={() => setExpanded(!expanded)}
         className="flex items-center gap-2 w-full px-3 py-1.5 text-xs text-claude-muted hover:bg-claude-border/20 transition-colors"

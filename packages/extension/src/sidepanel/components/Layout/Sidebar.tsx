@@ -1,6 +1,21 @@
 import { useSessionStore } from "@/sidepanel/stores/sessionStore";
 import { useChatStore } from "@/sidepanel/stores/chatStore";
 import { useWorkspaceStore } from "@/sidepanel/stores/workspaceStore";
+import type { SessionInfo } from "@/lib/protocol";
+
+function relativeTime(dateStr: string): string {
+  const diff = Date.now() - new Date(dateStr).getTime();
+  if (diff < 0) return "now";
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return "now";
+  if (mins < 60) return `${mins}m`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}h`;
+  const days = Math.floor(hours / 24);
+  if (days < 30) return `${days}d`;
+  const months = Math.floor(days / 30);
+  return `${months}mo`;
+}
 
 interface Props {
   open: boolean;
@@ -14,9 +29,13 @@ export function Sidebar({ open, onClose }: Props) {
   const {
     sessions,
     activeSessionId,
+    hiddenSessionIds,
     createSession,
     switchSession,
     deleteSession,
+    hideSession,
+    activateHistorySession,
+    loadHistoryProject,
   } = useSessionStore();
   const { workspaces, activeWorkspaceId } = useWorkspaceStore();
   const clearMessages = useChatStore((s) => s.clearMessages);
@@ -26,7 +45,11 @@ export function Sidebar({ open, onClose }: Props) {
   const activeWorkspace =
     workspaces.find((workspace) => workspace.id === activeWorkspaceId) ?? null;
   const visibleSessions = activeWorkspace
-    ? sessions.filter((session) => session.workspaceId === activeWorkspace.id)
+    ? sessions.filter(
+        (session) =>
+          session.workspaceId === activeWorkspace.id &&
+          !hiddenSessionIds.includes(session.id)
+      )
     : [];
 
   const handleNew = async () => {
@@ -39,14 +62,31 @@ export function Sidebar({ open, onClose }: Props) {
     onClose();
   };
 
-  const handleSelect = (id: string) => {
-    switchSession(id);
+  const handleSelect = async (session: SessionInfo) => {
+    if (session.source === "history" && session.workspaceId?.startsWith("ws_history_")) {
+      const encodedPath = session.workspaceId.replace("ws_history_", "");
+      await activateHistorySession(session.id, session.cwd, encodedPath);
+    } else {
+      switchSession(session.id);
+    }
     onClose();
+  };
+
+  const handleRefreshHistory = async (e: React.MouseEvent, session: SessionInfo) => {
+    e.stopPropagation();
+    if (!session.workspaceId?.startsWith("ws_history_")) return;
+    const encodedPath = session.workspaceId.replace("ws_history_", "");
+    await loadHistoryProject(encodedPath, activeWorkspace?.name ?? "");
   };
 
   const handleDelete = async (e: React.MouseEvent, id: string) => {
     e.stopPropagation();
     await deleteSession(id);
+  };
+
+  const handleHide = async (e: React.MouseEvent, id: string) => {
+    e.stopPropagation();
+    await hideSession(id);
   };
 
   return (
@@ -92,42 +132,83 @@ export function Sidebar({ open, onClose }: Props) {
               {t("暂无会话", "No sessions yet")}
             </p>
           ) : (
-            visibleSessions.map((session) => (
-              <button
-                key={session.id}
-                onClick={() => handleSelect(session.id)}
-                className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-colors group flex items-start justify-between ${
-                  session.id === activeSessionId
-                    ? "bg-claude-accent/15 text-claude-text"
-                    : "hover:bg-claude-border/30 text-claude-muted"
-                }`}
-              >
-                <div className="flex-1 min-w-0">
-                  <div className="truncate text-xs font-medium">
-                    {t("会话", "Session")} {session.id.slice(0, 6)}
-                  </div>
-                  <div className="text-[10px] mt-0.5 opacity-40">
-                    {t(`${session.messageCount} 条消息`, `${session.messageCount} messages`)}
-                  </div>
-                </div>
-                <button
-                  onClick={(e) => handleDelete(e, session.id)}
-                  className="p-1 opacity-0 group-hover:opacity-100 hover:text-claude-error transition-all"
+            visibleSessions.map((session) => {
+              const isHistory = session.source === "history";
+              return (
+                <div
+                  key={session.id}
+                  className={`group flex items-center gap-1 px-3 py-2 rounded-lg text-sm transition-colors ${
+                    session.id === activeSessionId
+                      ? "bg-claude-accent/15 text-claude-text"
+                      : "hover:bg-claude-border/30 text-claude-muted"
+                  }`}
                 >
-                  <svg
-                    width="12"
-                    height="12"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
+                  <button
+                    onClick={() => handleSelect(session)}
+                    className="flex-1 min-w-0 text-left flex items-center gap-1.5"
                   >
-                    <polyline points="3 6 5 6 21 6" />
-                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-                  </svg>
-                </button>
-              </button>
-            ))
+                    {isHistory && (
+                      <svg
+                        width="12"
+                        height="12"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        className="shrink-0 opacity-40"
+                      >
+                        <circle cx="12" cy="12" r="10" />
+                        <polyline points="12 6 12 12 16 14" />
+                      </svg>
+                    )}
+                    <span className="truncate text-xs font-medium flex-1">
+                      {session.title || `${t("会话", "Session")} ${session.id.slice(0, 6)}`}
+                    </span>
+                    <span className="text-[10px] opacity-40 shrink-0">
+                      {relativeTime(session.createdAt)}
+                    </span>
+                  </button>
+                  {isHistory && (
+                    <button
+                      onClick={(e) => handleRefreshHistory(e, session)}
+                      className="p-1 opacity-0 group-hover:opacity-100 hover:text-claude-accent transition-all"
+                      title={t("刷新", "Refresh")}
+                    >
+                      <svg
+                        width="12"
+                        height="12"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                      >
+                        <polyline points="23 4 23 10 17 10" />
+                        <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
+                      </svg>
+                    </button>
+                  )}
+                  <button
+                    onClick={(e) =>
+                      isHistory ? handleHide(e, session.id) : handleDelete(e, session.id)
+                    }
+                    className="p-1 opacity-0 group-hover:opacity-100 hover:text-claude-error transition-all"
+                    title={isHistory ? t("隐藏", "Hide") : t("删除", "Delete")}
+                  >
+                    <svg
+                      width="12"
+                      height="12"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                    >
+                      <line x1="18" y1="6" x2="6" y2="18" />
+                      <line x1="6" y1="6" x2="18" y2="18" />
+                    </svg>
+                  </button>
+                </div>
+              );
+            })
           )}
         </div>
 

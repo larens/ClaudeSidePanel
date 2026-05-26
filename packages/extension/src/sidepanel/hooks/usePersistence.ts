@@ -1,6 +1,7 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { useChatStore } from "@/sidepanel/stores/chatStore";
 import { useSessionStore } from "@/sidepanel/stores/sessionStore";
+import { useHistoryStore } from "@/sidepanel/stores/historyStore";
 import type { Message } from "@/lib/protocol";
 
 const MSG_PREFIX = "claudeweb_messages_";
@@ -25,6 +26,9 @@ export function usePersistence() {
     }
   }, [messages, activeSessionId]);
 
+  // Track which history sessions have been loaded to avoid re-loading
+  const loadedHistoryRef = useRef(new Set<string>());
+
   // Load messages when session changes
   useEffect(() => {
     if (!activeSessionId) {
@@ -35,7 +39,33 @@ export function usePersistence() {
     try {
       chrome.storage.local.get(key).then((result) => {
         const saved: Message[] = result[key] ?? [];
-        loadMessages(saved);
+        if (saved.length > 0) {
+          loadMessages(saved);
+        } else {
+          // No persisted messages — check if this is a history session
+          const session = useSessionStore
+            .getState()
+            .sessions.find((s) => s.id === activeSessionId);
+          if (
+            session?.source === "history" &&
+            !loadedHistoryRef.current.has(activeSessionId)
+          ) {
+            loadedHistoryRef.current.add(activeSessionId);
+            // Load messages from history
+            const encodedPath = session.workspaceId
+              ?.replace("ws_history_", "");
+            if (encodedPath) {
+              useHistoryStore
+                .getState()
+                .loadSession(encodedPath, activeSessionId)
+                .then((msgs) => {
+                  if (msgs.length > 0) loadMessages(msgs);
+                });
+            }
+          } else {
+            loadMessages([]);
+          }
+        }
       });
     } catch {
       loadMessages([]);

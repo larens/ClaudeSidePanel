@@ -19,7 +19,8 @@ export type RequestType =
   | "file"
   | "terminal"
   | "system"
-  | "workspace";
+  | "workspace"
+  | "history";
 
 export interface ResponseMessage {
   id: string;
@@ -90,6 +91,8 @@ export interface SessionInfo {
   workspaceId?: string;
   createdAt: string;
   messageCount: number;
+  source?: "live" | "history";
+  title?: string;
 }
 
 // ── Workspace Messages ────────────────────────────────────
@@ -114,6 +117,59 @@ export interface FileWritePayload {
   cwd: string;
   relativePath: string;
   dataBase64: string;
+}
+
+// ── History Messages ───────────────────────────────────────
+
+export interface SessionLoadHistoryPayload {
+  sessionId: string;
+  cwd: string;
+  projectPath: string;
+}
+
+export interface HistoryListSessionsPayload {
+  projectPath: string;
+}
+
+export interface HistoryGetSessionPayload {
+  projectPath: string;
+  sessionId: string;
+}
+
+export interface HistorySearchPayload {
+  query: string;
+}
+
+export interface HistoryProject {
+  encodedPath: string;
+  decodedPath: string;
+  name: string;
+  sessionCount: number;
+}
+
+export interface HistorySessionMeta {
+  sessionId: string;
+  title: string;
+  lastPrompt: string;
+  leafUuid: string | null;
+  timestamp: string;
+  cwd: string;
+  gitBranch: string;
+  messageCount: number;
+}
+
+export interface HistorySessionDetail extends HistorySessionMeta {
+  messages: HistoryMessage[];
+}
+
+export interface HistoryMessage {
+  uuid: string;
+  parentUuid: string | null;
+  role: "user" | "assistant";
+  content: string;
+  timestamp: string;
+  thinking?: string;
+  toolCalls?: ToolCallInfo[];
 }
 
 // ── System Messages ───────────────────────────────────────

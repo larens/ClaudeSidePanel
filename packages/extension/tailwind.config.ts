@@ -9,6 +9,7 @@ export default {
         claude: {
           bg: "var(--color-bg)",
           surface: "var(--color-surface)",
+          "surface-raised": "var(--color-surface-raised)",
           border: "var(--color-border)",
           text: "var(--color-text)",
           muted: "var(--color-muted)",

@@ -12,6 +12,15 @@ import { useWorkspaceStore } from "@/sidepanel/stores/workspaceStore";
 import { bridgeClient } from "@/lib/bridge-client";
 import type { FileWritePayload, ToolCallInfo } from "@/lib/protocol";
 
+function extractTag(text: string): string {
+  // Extract tag name from selector like "#id > div.class" or preview like "<button.btn …>"
+  const tagMatch = text.match(/<(\w[\w-]*)/);
+  if (tagMatch) return `<${tagMatch[1]}>`;
+  const selMatch = text.match(/(?:^|>\s*)(\w[\w-]*)/);
+  if (selMatch) return `<${selMatch[1]}>`;
+  return "<el>";
+}
+
 export function ChatInput() {
   const isZh = navigator.language?.toLowerCase().startsWith("zh");
   const t = useCallback(
@@ -109,7 +118,16 @@ export function ChatInput() {
             upsertToolCall(assistantId, payload.toolCall);
           }
         },
-        () => completeMessage(assistantId),
+        (msg) => {
+          const result = msg.payload as { text?: string };
+          if (result?.text) {
+            const current = useChatStore.getState().messages.find((m) => m.id === assistantId);
+            if (!current?.content) {
+              appendText(assistantId, result.text);
+            }
+          }
+          completeMessage(assistantId);
+        },
         (error) => {
           appendText(assistantId, `\n\n> Error: ${error.message}`);
           completeMessage(assistantId);
@@ -130,7 +148,7 @@ export function ChatInput() {
   );
 
   const expandInspectSnippets = useCallback((text: string) => {
-    return text.replace(/<<inspect:([a-z0-9]+)>>[^\n]*/gi, (_match, id) => {
+    return text.replace(/<<i:([a-z0-9]+)>>\S*/gi, (_match, id) => {
       const data = inspectSnippetsRef.current.get(String(id));
       if (!data) return "";
       const selectorLine = data.selector ? `Selector: ${data.selector}\n` : "";
@@ -177,8 +195,8 @@ export function ChatInput() {
 
     if (!result.ok) {
       const hint = t(
-        "无法进入检查模式：请刷新当前网页后重试",
-        "Unable to enter inspect mode: refresh the page and try again"
+        "启动检查模式，请刷新当前网页后重试",
+        "To start inspect mode, please refresh the page and try again"
       );
       useChatStore
         .getState()
@@ -203,17 +221,23 @@ export function ChatInput() {
         | { selector: string; outerHTML: string; preview: string }
         | undefined;
       if (!payload?.outerHTML) return;
-      const id = `${Date.now().toString(36)}${Math.random()
-        .toString(36)
-        .slice(2, 8)}`;
+      const id = Math.random().toString(36).slice(2, 8);
       inspectSnippetsRef.current.set(id, {
         selector: payload.selector ?? "",
         outerHTML: payload.outerHTML,
         preview: payload.preview ?? "",
       });
-      const line = `<<inspect:${id}>> ${payload.preview || "<element …>"}`;
+      const tag = extractTag(payload.selector || payload.preview || "");
+      const line = `<<i:${id}>>${tag}`;
       setMessage((m) => `${m}${m ? "\n" : ""}${line}`);
-      setTimeout(() => textareaRef.current?.focus(), 50);
+      setTimeout(() => {
+        const textarea = textareaRef.current;
+        if (textarea) {
+          textarea.style.height = "auto";
+          textarea.style.height = `${Math.min(textarea.scrollHeight, 120)}px`;
+          textarea.focus();
+        }
+      }, 50);
       setIsInspecting(false);
     };
     chrome.runtime.onMessage.addListener(handler);

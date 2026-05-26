@@ -59,6 +59,27 @@ export interface FileWritePayload {
   dataBase64: string;
 }
 
+// ── History Messages ───────────────────────────────────────
+
+export interface SessionLoadHistoryPayload {
+  sessionId: string;
+  cwd: string;
+  projectPath: string;
+}
+
+export interface HistoryListSessionsPayload {
+  projectPath: string;
+}
+
+export interface HistoryGetSessionPayload {
+  projectPath: string;
+  sessionId: string;
+}
+
+export interface HistorySearchPayload {
+  query: string;
+}
+
 export function createResponse(
   id: string,
   type: ResponseMessage["type"],

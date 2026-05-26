@@ -34,6 +34,19 @@ export class SessionManager {
     };
   }
 
+  createWithSessionId(sessionId: string, cwd: string): SessionInfo {
+    const session = new CLISession(sessionId, cwd);
+    session.setResumeId(sessionId);
+    this.sessions.set(sessionId, session);
+    this.meta.set(sessionId, { createdAt: new Date() });
+    return {
+      id: sessionId,
+      cwd,
+      createdAt: new Date().toISOString(),
+      messageCount: 0,
+    };
+  }
+
   get(id: string): CLISession | undefined {
     return this.sessions.get(id);
   }

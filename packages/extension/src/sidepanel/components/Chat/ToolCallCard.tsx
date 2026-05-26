@@ -39,8 +39,8 @@ export function ToolCallCard({ toolCall, onRetry }: Props) {
 
   return (
     <div
-      className={`bg-claude-surface/80 border rounded-lg overflow-hidden text-xs ${
-        hasError ? "border-claude-error/30" : "border-claude-border/50"
+      className={`bg-claude-surface/80 rounded-lg overflow-hidden text-xs ${
+        hasError ? "border border-claude-error/30" : ""
       }`}
     >
       {/* Collapsed header */}
@@ -102,7 +102,7 @@ export function ToolCallCard({ toolCall, onRetry }: Props) {
 
       {/* Expanded content */}
       {expanded && (
-        <div className="border-t border-claude-border/50 space-y-2 p-2">
+        <div className="border-t border-claude-border/20 space-y-2 p-2">
           {/* Input parameters */}
           {Object.keys(toolCall.input).length > 0 && (
             <div className="space-y-1">

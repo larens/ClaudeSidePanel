@@ -1,5 +1,6 @@
 import { useEffect, useRef, useCallback } from "react";
 import { useChatStore } from "@/sidepanel/stores/chatStore";
+import type { Message } from "@/lib/protocol";
 import { MessageBubble } from "./MessageBubble";
 
 export function ChatView() {
@@ -91,15 +92,81 @@ export function ChatView() {
     );
   }
 
+  // Group consecutive assistant messages for shared timeline
+  const groups = groupMessages(messages);
+
   return (
     <div
       ref={scrollRef}
-      className="flex-1 overflow-y-auto px-3 py-4 space-y-4"
+      className="flex-1 overflow-y-auto px-3 py-4"
     >
-      {messages.map((msg) => (
-        <MessageBubble key={msg.id} message={msg} onRetry={handleRetry} />
-      ))}
+      {groups.map((group) => {
+        if (group.role === "user") {
+          return (
+            <div key={group.key} className="mb-4">
+              <MessageBubble
+                message={group.messages[0]}
+                onRetry={handleRetry}
+              />
+            </div>
+          );
+        }
+
+        // Consecutive assistant messages — shared timeline
+        return (
+          <div key={group.key} className="relative mb-4">
+            {/* Continuous vertical line spanning all messages */}
+            <div
+              className="absolute left-[3px] top-0 bottom-0 w-[1.5px] rounded-full"
+              style={{ backgroundColor: "rgba(136,136,136,0.25)" }}
+            />
+            {group.messages.map((msg) => (
+              <div key={msg.id} className="mb-4">
+                <MessageBubble
+                  message={msg}
+                  onRetry={handleRetry}
+                  timelineDotsOnly
+                />
+              </div>
+            ))}
+          </div>
+        );
+      })}
       <div ref={bottomRef} />
     </div>
   );
+}
+
+interface MessageGroup {
+  key: string;
+  role: "user" | "assistant";
+  messages: Message[];
+}
+
+function groupMessages(messages: Message[]): MessageGroup[] {
+  const groups: MessageGroup[] = [];
+  let i = 0;
+  while (i < messages.length) {
+    const msg = messages[i];
+    if (msg.role === "system") {
+      groups.push({ key: msg.id, role: "assistant", messages: [msg] });
+      i++;
+      continue;
+    }
+    if (msg.role === "user") {
+      groups.push({ key: msg.id, role: "user", messages: [msg] });
+      i++;
+      continue;
+    }
+    // Collect consecutive assistant messages
+    const batch: Message[] = [];
+    while (i < messages.length && messages[i].role === "assistant") {
+      batch.push(messages[i]);
+      i++;
+    }
+    if (batch.length > 0) {
+      groups.push({ key: batch[0].id, role: "assistant", messages: batch });
+    }
+  }
+  return groups;
 }

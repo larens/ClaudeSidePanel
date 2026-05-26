@@ -1,8 +1,9 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useConnectionStore } from "@/sidepanel/stores/connectionStore";
 import { useSessionStore } from "@/sidepanel/stores/sessionStore";
 import { useChatStore } from "@/sidepanel/stores/chatStore";
 import { useWorkspaceStore } from "@/sidepanel/stores/workspaceStore";
+import { useHistoryStore } from "@/sidepanel/stores/historyStore";
 import { Sidebar } from "./Sidebar";
 import { SettingsPanel } from "../Settings/SettingsPanel";
 
@@ -16,6 +17,7 @@ export function Header() {
     removeWorkspaceSessions,
     setActiveSession,
     ensureWorkspaceSession,
+    loadHistoryProject,
   } = useSessionStore();
   const { messages, clearMessages } = useChatStore();
   const {
@@ -28,9 +30,12 @@ export function Header() {
     refreshWorkspace,
     removeWorkspace,
   } = useWorkspaceStore();
+  const { projects, isLoadingProjects, loadProjects, hiddenProjectPaths, hideProject } =
+    useHistoryStore();
+
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [workspacePanelOpen, setWorkspacePanelOpen] = useState(false);
+  const [panelOpen, setPanelOpen] = useState(false);
 
   const activeWorkspace =
     workspaces.find((workspace) => workspace.id === activeWorkspaceId) ?? null;
@@ -38,11 +43,18 @@ export function Header() {
     .map((id) => workspaces.find((workspace) => workspace.id === id) ?? null)
     .filter((workspace): workspace is NonNullable<typeof workspace> => Boolean(workspace));
 
+  // Load history projects when panel opens
+  useEffect(() => {
+    if (panelOpen && projects.length === 0 && !isLoadingProjects) {
+      loadProjects();
+    }
+  }, [panelOpen, projects.length, isLoadingProjects, loadProjects]);
+
   const handlePickWorkspace = async () => {
     const workspace = await pickWorkspace();
     if (!workspace) return;
     await ensureWorkspaceSession(workspace.id, workspace.path);
-    setWorkspacePanelOpen(false);
+    setPanelOpen(false);
   };
 
   const handleSwitchWorkspace = async (workspaceId: string) => {
@@ -53,8 +65,15 @@ export function Header() {
     } else {
       setActiveWorkspaceSession(workspaceId);
     }
-    setWorkspacePanelOpen(false);
+    setPanelOpen(false);
   };
+
+  const handleSelectHistoryProject = async (encodedPath: string, name: string) => {
+    await loadHistoryProject(encodedPath, name);
+    setPanelOpen(false);
+    setSidebarOpen(true);
+  };
+
 
   const handleNewSession = async () => {
     if (!activeWorkspace) return;
@@ -63,7 +82,7 @@ export function Header() {
       cwd: activeWorkspace.path,
       workspaceId: activeWorkspace.id,
     });
-    setWorkspacePanelOpen(false);
+    setPanelOpen(false);
   };
 
   const handleRefreshWorkspace = async () => {
@@ -82,7 +101,7 @@ export function Header() {
       clearMessages();
       setActiveSession(null);
     }
-    setWorkspacePanelOpen(false);
+    setPanelOpen(false);
   };
 
   return (
@@ -107,9 +126,26 @@ export function Header() {
               <line x1="3" y1="18" x2="21" y2="18" />
             </svg>
           </button>
-          <span className="text-sm font-semibold text-claude-text truncate">
-            {activeWorkspace?.name ?? t("选择工作区", "Select Workspace")}
-          </span>
+          <button
+            onClick={() => setPanelOpen((open) => !open)}
+            className="flex items-center gap-1 min-w-0 hover:opacity-80 transition-opacity"
+            title={t("切换项目", "Switch project")}
+          >
+            <span className="text-sm font-semibold text-claude-text truncate">
+              {activeWorkspace?.name ?? t("选择工作区", "Select Workspace")}
+            </span>
+            <svg
+              width="12"
+              height="12"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              className="text-claude-muted shrink-0"
+            >
+              <polyline points="6 9 12 15 18 9" />
+            </svg>
+          </button>
         </div>
         <div className="flex items-center gap-0.5">
           {messages.length > 0 && (
@@ -131,22 +167,6 @@ export function Header() {
               </svg>
             </button>
           )}
-          <button
-            onClick={() => setWorkspacePanelOpen((open) => !open)}
-            className="p-1.5 rounded hover:bg-claude-border/50 text-claude-muted hover:text-claude-text transition-colors"
-            title={t("工作区", "Workspace")}
-          >
-            <svg
-              width="14"
-              height="14"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-            >
-              <polyline points="6 9 12 15 18 9" />
-            </svg>
-          </button>
           <button
             onClick={() => setSettingsOpen(true)}
             className="p-1.5 rounded hover:bg-claude-border/50 text-claude-muted hover:text-claude-text transition-colors"
@@ -181,8 +201,11 @@ export function Header() {
             }
           />
         </div>
-        {workspacePanelOpen && (
-          <div className="absolute top-[calc(100%+6px)] left-3 right-3 z-30 rounded-xl border border-claude-border bg-claude-surface shadow-xl p-2 space-y-2">
+
+        {/* Unified project dropdown */}
+        {panelOpen && (
+          <div className="absolute top-[calc(100%+6px)] left-3 right-3 z-30 rounded-xl border border-claude-border bg-claude-surface shadow-xl p-2 space-y-2 max-h-[70vh] overflow-y-auto">
+            {/* Current workspace info */}
             <div className="flex items-center justify-between px-2 py-1.5 rounded-lg bg-claude-bg/60">
               <div className="min-w-0">
                 <div className="text-xs font-medium text-claude-text truncate">
@@ -205,10 +228,82 @@ export function Header() {
               )}
             </div>
 
+            {/* History projects */}
+            {(() => {
+              const visibleProjects = projects.filter(
+                (p) => !hiddenProjectPaths.includes(p.encodedPath)
+              );
+              return visibleProjects.length > 0 ? (
+                <div className="space-y-1">
+                  <div className="px-2 text-[10px] uppercase tracking-wide text-claude-muted">
+                    {t("历史项目", "History Projects")}
+                  </div>
+                  {visibleProjects.map((project) => (
+                    <div
+                      key={project.encodedPath}
+                      className="group flex items-center gap-1 px-2 py-2 rounded-lg transition-colors hover:bg-claude-border/30"
+                    >
+                      <button
+                        onClick={() =>
+                          handleSelectHistoryProject(project.encodedPath, project.name)
+                        }
+                        className="flex items-center gap-2 flex-1 min-w-0 text-left text-claude-muted hover:text-claude-text"
+                      >
+                        <svg
+                          width="12"
+                          height="12"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          className="shrink-0 opacity-50"
+                        >
+                          <circle cx="12" cy="12" r="10" />
+                          <polyline points="12 6 12 12 16 14" />
+                        </svg>
+                        <span className="text-xs font-medium truncate flex-1">
+                          {project.name}
+                        </span>
+                        <span className="text-[10px] opacity-50">
+                          {project.sessionCount}
+                        </span>
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          hideProject(project.encodedPath);
+                        }}
+                        className="p-1 opacity-0 group-hover:opacity-100 hover:text-claude-error transition-all"
+                        title={t("隐藏项目", "Hide project")}
+                      >
+                        <svg
+                          width="12"
+                          height="12"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                        >
+                          <line x1="18" y1="6" x2="6" y2="18" />
+                          <line x1="6" y1="6" x2="18" y2="18" />
+                        </svg>
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              ) : null;
+            })()}
+            {isLoadingProjects && (
+              <div className="px-2 py-2 text-[10px] text-claude-muted text-center">
+                {t("加载历史项目…", "Loading history…")}
+              </div>
+            )}
+
+            {/* Recent workspaces */}
             {recentWorkspaces.length > 0 && (
               <div className="space-y-1">
                 <div className="px-2 text-[10px] uppercase tracking-wide text-claude-muted">
-                  {t("最近", "Recent")}
+                  {t("最近工作区", "Recent Workspaces")}
                 </div>
                 {recentWorkspaces.map((workspace) => (
                   <button
@@ -228,6 +323,7 @@ export function Header() {
               </div>
             )}
 
+            {/* Action buttons */}
             <div className="grid grid-cols-2 gap-2 pt-1">
               <button
                 onClick={handlePickWorkspace}

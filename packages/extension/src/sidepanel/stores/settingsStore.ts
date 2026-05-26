@@ -20,7 +20,7 @@ interface SettingsStore extends Settings {
 const STORAGE_KEY = "claudeweb_settings";
 
 const defaults: Settings = {
-  theme: "dark",
+  theme: "system",
   bridgePort: 18765,
   showThinking: true,
   compactMode: false,

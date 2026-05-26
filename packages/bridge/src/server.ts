@@ -15,6 +15,18 @@ import {
   pickWorkspace,
   validateWorkspace,
 } from "./workspace.js";
+import {
+  listProjects,
+  listSessions,
+  getSessionDetail,
+  searchSessions,
+} from "./history.js";
+import type {
+  HistoryListSessionsPayload,
+  HistoryGetSessionPayload,
+  HistorySearchPayload,
+  SessionLoadHistoryPayload,
+} from "./protocol.js";
 
 export interface BridgeServerOptions {
   port: number;
@@ -102,6 +114,9 @@ export class BridgeServer {
         break;
       case "system":
         this.handleSystem(ws, msg);
+        break;
+      case "history":
+        this.handleHistory(ws, msg);
         break;
       default:
         ws.send(
@@ -265,6 +280,19 @@ export class BridgeServer {
         );
         break;
       }
+      case "session.load-history": {
+        const { sessionId, cwd } = msg.payload as SessionLoadHistoryPayload;
+        const session = this.sessions.createWithSessionId(sessionId, cwd);
+        ws.send(
+          JSON.stringify(
+            createResponse(msg.id, "complete", "session.load-history", {
+              ...session,
+              source: "history",
+            })
+          )
+        );
+        break;
+      }
     }
   }
 
@@ -302,6 +330,47 @@ export class BridgeServer {
       }
       default:
         sendError(`Unknown workspace action: ${msg.action}`);
+    }
+  }
+
+  private handleHistory(ws: WebSocket, msg: RequestMessage): void {
+    const sendSuccess = (payload: unknown) => {
+      ws.send(JSON.stringify(createResponse(msg.id, "complete", msg.action, payload)));
+    };
+    const sendError = (error: unknown) => {
+      ws.send(
+        JSON.stringify(
+          createResponse(
+            msg.id,
+            "error",
+            msg.action,
+            error instanceof Error ? error.message : String(error)
+          )
+        )
+      );
+    };
+
+    switch (msg.action) {
+      case "history.list-projects":
+        listProjects().then(sendSuccess).catch(sendError);
+        break;
+      case "history.list-sessions": {
+        const { projectPath } = msg.payload as HistoryListSessionsPayload;
+        listSessions(projectPath).then(sendSuccess).catch(sendError);
+        break;
+      }
+      case "history.get-session": {
+        const { projectPath, sessionId } = msg.payload as HistoryGetSessionPayload;
+        getSessionDetail(projectPath, sessionId).then(sendSuccess).catch(sendError);
+        break;
+      }
+      case "history.search": {
+        const { query } = msg.payload as HistorySearchPayload;
+        searchSessions(query).then(sendSuccess).catch(sendError);
+        break;
+      }
+      default:
+        sendError(`Unknown history action: ${msg.action}`);
     }
   }
 
