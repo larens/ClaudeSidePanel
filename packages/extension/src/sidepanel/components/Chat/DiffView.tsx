@@ -29,6 +29,24 @@ export function DiffView({ oldString, newString, filePath, expanded: initialExpa
     return { adds, removes };
   }, [lines]);
 
+  const { oldLines, newLines } = useMemo(() => {
+    const old: DiffLine[] = [];
+    const cur: DiffLine[] = [];
+    for (const line of lines) {
+      if (line.type === "remove") {
+        old.push(line);
+        cur.push({ type: "context", content: "" });
+      } else if (line.type === "add") {
+        old.push({ type: "context", content: "" });
+        cur.push(line);
+      } else {
+        old.push(line);
+        cur.push(line);
+      }
+    }
+    return { oldLines: old, newLines: cur };
+  }, [lines]);
+
   return (
     <div className="rounded-md border border-claude-border/15 overflow-hidden text-xs">
       {/* Header */}
@@ -72,58 +90,64 @@ export function DiffView({ oldString, newString, filePath, expanded: initialExpa
         </span>
       </button>
 
-      {/* Diff content */}
+      {/* Side-by-side diff content */}
       {expanded && (
         <div className={`${maxHeight ?? "max-h-80"} overflow-y-auto`}>
-          <table className="w-full border-collapse">
-            <tbody>
-              {lines.map((line, i) => (
-                <tr
-                  key={i}
-                  className={
-                    line.type === "add"
-                      ? "bg-claude-success/8"
-                      : line.type === "remove"
-                      ? "bg-claude-error/8"
-                      : ""
-                  }
-                >
-                  <td className="w-8 px-1 py-0 text-right text-claude-muted/50 select-none border-r border-claude-border/15">
-                    {line.oldLine ?? ""}
-                  </td>
-                  <td className="w-8 px-1 py-0 text-right text-claude-muted/50 select-none border-r border-claude-border/15">
-                    {line.newLine ?? ""}
-                  </td>
-                  <td className="w-5 px-0.5 py-0 text-center select-none">
-                    <span
-                      className={
-                        line.type === "add"
-                          ? "text-claude-success"
-                          : line.type === "remove"
-                          ? "text-claude-error"
-                          : "text-transparent"
-                      }
-                    >
-                      {line.type === "add" ? "+" : line.type === "remove" ? "-" : " "}
-                    </span>
-                  </td>
-                  <td className="px-2 py-0 font-mono whitespace-pre">
-                    <span
-                      className={
-                        line.type === "add"
-                          ? "text-claude-success"
-                          : line.type === "remove"
-                          ? "text-claude-error"
-                          : "text-claude-text"
-                      }
-                    >
-                      {line.content}
-                    </span>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          {/* Side labels */}
+          <div className="flex border-b border-claude-border/15 text-[10px] text-claude-muted uppercase tracking-wider">
+            <div className="flex-1 px-3 py-1 border-r border-claude-border/15 text-center">Before</div>
+            <div className="flex-1 px-3 py-1 text-center">After</div>
+          </div>
+          <div className="flex">
+            {/* Before column */}
+            <div className="flex-1 border-r border-claude-border/15 overflow-x-auto">
+              <table className="w-full border-collapse">
+                <tbody>
+                  {oldLines.map((line, i) => (
+                    <tr key={i} className={line.type === "remove" ? "bg-claude-error/8" : ""}>
+                      <td className="w-7 px-1 py-0 text-right text-claude-muted/50 select-none border-r border-claude-border/15">
+                        {line.oldLine ?? ""}
+                      </td>
+                      <td className="w-4 px-0.5 py-0 text-center select-none">
+                        <span className={line.type === "remove" ? "text-claude-error" : "text-transparent"}>
+                          {line.type === "remove" ? "-" : " "}
+                        </span>
+                      </td>
+                      <td className="px-2 py-0 font-mono whitespace-pre">
+                        <span className={line.type === "remove" ? "text-claude-error" : "text-claude-text"}>
+                          {line.content}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            {/* After column */}
+            <div className="flex-1 overflow-x-auto">
+              <table className="w-full border-collapse">
+                <tbody>
+                  {newLines.map((line, i) => (
+                    <tr key={i} className={line.type === "add" ? "bg-claude-success/8" : ""}>
+                      <td className="w-7 px-1 py-0 text-right text-claude-muted/50 select-none border-r border-claude-border/15">
+                        {line.newLine ?? ""}
+                      </td>
+                      <td className="w-4 px-0.5 py-0 text-center select-none">
+                        <span className={line.type === "add" ? "text-claude-success" : "text-transparent"}>
+                          {line.type === "add" ? "+" : " "}
+                        </span>
+                      </td>
+                      <td className="px-2 py-0 font-mono whitespace-pre">
+                        <span className={line.type === "add" ? "text-claude-success" : "text-claude-text"}>
+                          {line.content}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
         </div>
       )}
     </div>

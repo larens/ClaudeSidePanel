@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, memo } from "react";
 import type { Message } from "@/lib/protocol";
 import { Markdown } from "../shared/Markdown";
 import { ToolCallCard } from "./ToolCallCard";
@@ -10,7 +10,7 @@ interface Props {
   timelineDotsOnly?: boolean;
 }
 
-export function MessageBubble({ message, onRetry, timelineDotsOnly }: Props) {
+export const MessageBubble = memo(function MessageBubble({ message, onRetry, timelineDotsOnly }: Props) {
   if (message.role === "system") {
     return (
       <div className="flex justify-center animate-fade-in">
@@ -25,6 +25,7 @@ export function MessageBubble({ message, onRetry, timelineDotsOnly }: Props) {
   const hasTimelineItems =
     !isUser &&
     (message.thinking || (message.toolCalls && message.toolCalls.length > 0));
+  const isTimelineMessage = !isUser && (hasTimelineItems || timelineDotsOnly);
 
   return (
     <div
@@ -87,25 +88,31 @@ export function MessageBubble({ message, onRetry, timelineDotsOnly }: Props) {
             )}
 
             {/* Text content */}
-            {message.content && <Markdown content={message.content} />}
+            {message.content && (
+              <div className={isTimelineMessage ? "pl-[18px]" : undefined}>
+                <Markdown content={message.content} streaming={message.isStreaming} />
+              </div>
+            )}
 
             {/* Streaming indicator */}
             {message.isStreaming && !message.content && !message.thinking && (
-              <div className="flex items-center gap-1.5">
+              <div className={`flex items-center gap-1.5 ${isTimelineMessage ? "pl-[18px]" : ""}`}>
                 <span className="w-2 h-2 rounded-full bg-claude-accent animate-pulse" />
               </div>
             )}
 
             {/* Assistant message actions */}
             {!message.isStreaming && message.content && (
-              <MessageActions content={message.content} />
+              <div className={isTimelineMessage ? "pl-[18px]" : undefined}>
+                <MessageActions content={message.content} />
+              </div>
             )}
           </div>
         )}
       </div>
     </div>
   );
-}
+}, (prev, next) => prev.message === next.message && prev.onRetry === next.onRetry && prev.timelineDotsOnly === next.timelineDotsOnly);
 
 function MessageActions({
   content,

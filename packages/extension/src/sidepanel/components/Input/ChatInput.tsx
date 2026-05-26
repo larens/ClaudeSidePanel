@@ -21,39 +21,6 @@ function extractTag(text: string): string {
   return "<el>";
 }
 
-function cropScreenshot(
-  dataUrl: string,
-  rect: { x: number; y: number; width: number; height: number }
-): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    img.onload = () => {
-      const dpr = window.devicePixelRatio || 1;
-      const sx = Math.round(rect.x * dpr);
-      const sy = Math.round(rect.y * dpr);
-      const sw = Math.round(rect.width * dpr);
-      const sh = Math.round(rect.height * dpr);
-      const canvas = document.createElement("canvas");
-      canvas.width = sw;
-      canvas.height = sh;
-      const ctx = canvas.getContext("2d");
-      if (!ctx) {
-        reject(new Error("Canvas context not available"));
-        return;
-      }
-      ctx.drawImage(img, sx, sy, sw, sh, 0, 0, sw, sh);
-      const croppedUrl = canvas.toDataURL("image/png");
-      const base64 = croppedUrl.split(",")[1] ?? "";
-      if (!base64) {
-        reject(new Error("Failed to export cropped image"));
-        return;
-      }
-      resolve(base64);
-    };
-    img.onerror = () => reject(new Error("Failed to load screenshot image"));
-    img.src = dataUrl;
-  });
-}
 
 export function ChatInput() {
   const isZh = navigator.language?.toLowerCase().startsWith("zh");
@@ -68,16 +35,7 @@ export function ChatInput() {
   const speechRef = useRef<unknown>(null);
   const [isRecording, setIsRecording] = useState(false);
   const [isInspecting, setIsInspecting] = useState(false);
-  const inspectSnippetsRef = useRef(
-    new Map<string, {
-      selector: string;
-      outerHTML: string;
-      preview: string;
-      boundingRect?: { top: number; left: number; width: number; height: number };
-      pagePath?: string;
-      nearbyText?: string;
-    }>()
-  );
+  const [pendingScreenshot, setPendingScreenshot] = useState<string | null>(null);
   const {
     addUserMessage,
     startAssistantMessage,
@@ -206,23 +164,6 @@ export function ChatInput() {
     ]
   );
 
-  const expandInspectSnippets = useCallback((text: string) => {
-    return text.replace(/<<i:([a-z0-9]+)>>\S*/gi, (_match, id) => {
-      const data = inspectSnippetsRef.current.get(String(id));
-      if (!data) return "";
-      const parts: string[] = ["[Selected Element]"];
-      if (data.pagePath) parts.push(`Page path: ${data.pagePath}`);
-      if (data.boundingRect) {
-        const r = data.boundingRect;
-        parts.push(`Position: top=${r.top}, left=${r.left}, size=${r.width}x${r.height}`);
-      }
-      if (data.nearbyText) parts.push(`Nearby text: "${data.nearbyText}"`);
-      if (data.selector) parts.push(`CSS Selector: ${data.selector}`);
-      parts.push(`HTML:\n\`\`\`html\n${data.outerHTML}\n\`\`\``);
-      return parts.join("\n");
-    });
-  }, []);
-
   const getActiveTabId = useCallback(async () => {
     const tab = await new Promise<chrome.tabs.Tab | null>((resolve) => {
       chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
@@ -287,25 +228,27 @@ export function ChatInput() {
       const payload = msg?.payload as
         | {
             selector: string;
-            outerHTML: string;
+            elementStructure: string;
+            elementText: string;
             preview: string;
             boundingRect?: { top: number; left: number; width: number; height: number };
             pagePath?: string;
             nearbyText?: string;
           }
         | undefined;
-      if (!payload?.outerHTML) return;
-      const id = Math.random().toString(36).slice(2, 8);
-      inspectSnippetsRef.current.set(id, {
-        selector: payload.selector ?? "",
-        outerHTML: payload.outerHTML,
-        preview: payload.preview ?? "",
-        boundingRect: payload.boundingRect,
-        pagePath: payload.pagePath,
-        nearbyText: payload.nearbyText,
-      });
+      if (!payload?.elementStructure && !payload?.elementText) return;
+      const parts: string[] = ["[Selected Element]"];
+      if (payload.pagePath) parts.push(`Page path: ${payload.pagePath}`);
+      if (payload.boundingRect) {
+        const r = payload.boundingRect;
+        parts.push(`Position: top=${r.top}, left=${r.left}, size=${r.width}x${r.height}`);
+      }
+      if (payload.nearbyText) parts.push(`Nearby text: "${payload.nearbyText}"`);
+      if (payload.selector) parts.push(`CSS Selector: ${payload.selector}`);
+      if (payload.elementStructure) parts.push(`Structure:\n\`\`\`\n${payload.elementStructure}\n\`\`\``);
+      if (payload.elementText) parts.push(`Content: ${payload.elementText}`);
       const tag = extractTag(payload.selector || payload.preview || "");
-      const line = `<<i:${id}>>[${tag}]`;
+      const line = `${tag}\n${parts.join("\n")}`;
       setMessage((m) => `${m}${m ? "\n" : ""}${line}`);
       setTimeout(() => {
         const textarea = textareaRef.current;
@@ -428,35 +371,18 @@ export function ChatInput() {
     setTimeout(() => textareaRef.current?.focus(), 50);
   }, [activeWorkspace, writeFileToWorkspace, t]);
 
-  // Listen for cropped screenshot data from area selection
+  // Listen for confirmed screenshot from content script preview
   useEffect(() => {
     const handler = (msg: any) => {
-      if (msg?.type !== "screenshot-area-cropped") return;
-      const { dataUrl, rect } = msg?.payload ?? {};
-      if (!dataUrl || !rect) return;
-      (async () => {
-        try {
-          const croppedBase64 = await cropScreenshot(dataUrl, rect);
-          const relativePath = `.claudeweb/attachments/${Date.now()}-screenshot.png`;
-          const saved = await writeFileToWorkspace(relativePath, croppedBase64);
-          if (saved) {
-            setMessage((m) => `${m}${m ? "\n" : ""}${saved}`);
-            setTimeout(() => textareaRef.current?.focus(), 50);
-          } else {
-            useChatStore
-              .getState()
-              .addSystemMessage(t("保存截图失败", "Failed to save screenshot"));
-          }
-        } catch {
-          useChatStore
-            .getState()
-            .addSystemMessage(t("截图裁剪失败", "Failed to crop screenshot"));
-        }
-      })();
+      if (msg?.type !== "screenshot-confirmed") return;
+      const { croppedDataUrl } = msg?.payload ?? {};
+      if (!croppedDataUrl) return;
+      setPendingScreenshot(croppedDataUrl);
+      setTimeout(() => textareaRef.current?.focus(), 50);
     };
     chrome.runtime.onMessage.addListener(handler);
     return () => chrome.runtime.onMessage.removeListener(handler);
-  }, [writeFileToWorkspace, t]);
+  }, []);
 
   const handleScreenshot = useCallback(async () => {
     if (!canUseWorkspace || !activeWorkspace) return;
@@ -468,7 +394,7 @@ export function ChatInput() {
       return;
     }
     // Enter area selection mode on the page — result comes back via
-    // "screenshot-area-cropped" message handled in the useEffect above
+    // "screenshot-confirmed" message handled in the useEffect above
     chrome.tabs.sendMessage(tabId, { type: "screenshot-mode" }, (resp) => {
       const err = chrome.runtime.lastError?.message;
       if (err || !(resp as any)?.ok) {
@@ -552,19 +478,40 @@ export function ChatInput() {
     return () => window.removeEventListener("claude-web-auto-send", handler);
   }, [canSend, doSend]);
 
-  const handleSend = useCallback(() => {
+  const handleSend = useCallback(async () => {
     const text = message.trim();
-    if (!text) return;
+    if (!text && !pendingScreenshot) return;
     if (text === "/stop") {
       setMessage("");
       void stopCurrent();
       return;
     }
     if (!canSend) return;
+
+    let finalText = text;
+
+    // Save pending screenshot to workspace before sending
+    if (pendingScreenshot) {
+      const base64 = pendingScreenshot.split(",")[1] ?? "";
+      if (base64) {
+        const relativePath = `.claudeweb/attachments/${Date.now()}-screenshot.png`;
+        const saved = await writeFileToWorkspace(relativePath, base64);
+        if (saved) {
+          finalText = `${finalText}${finalText ? "\n" : ""}${saved}`;
+        } else {
+          useChatStore
+            .getState()
+            .addSystemMessage(t("保存截图失败", "Failed to save screenshot"));
+        }
+      }
+      setPendingScreenshot(null);
+    }
+
+    if (!finalText.trim()) return;
     setMessage("");
     if (textareaRef.current) textareaRef.current.style.height = "auto";
-    doSend(expandInspectSnippets(text));
-  }, [message, canSend, doSend, stopCurrent, expandInspectSnippets]);
+    doSend(finalText);
+  }, [message, pendingScreenshot, canSend, doSend, stopCurrent, writeFileToWorkspace, t]);
 
   const handleKeyDown = (e: ReactKeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Escape" && isStreaming) {
@@ -593,6 +540,24 @@ export function ChatInput() {
     <div className="shrink-0 border-t border-claude-border">
       <div className="px-3 py-2">
         <div className="border border-claude-border rounded-xl bg-claude-surface overflow-hidden">
+          {pendingScreenshot && (
+            <div className="relative inline-block m-2">
+              <div className="w-16 h-16 rounded-lg overflow-hidden border border-claude-border">
+                <img
+                  src={pendingScreenshot}
+                  alt="Screenshot preview"
+                  className="w-full h-full object-cover"
+                />
+              </div>
+              <button
+                onClick={() => setPendingScreenshot(null)}
+                className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-claude-error text-white flex items-center justify-center text-xs font-bold leading-none hover:opacity-80 transition-opacity"
+                title={t("删除截图", "Remove screenshot")}
+              >
+                &times;
+              </button>
+            </div>
+          )}
           <textarea
             ref={textareaRef}
             value={message}
@@ -705,7 +670,7 @@ export function ChatInput() {
             </button>
             <button
               onClick={isStreaming ? () => void stopCurrent() : handleSend}
-              disabled={isStreaming ? !canUseWorkspace : !message.trim() || !canSend}
+              disabled={isStreaming ? !canUseWorkspace : (!message.trim() && !pendingScreenshot) || !canSend}
               className="p-2 rounded-lg bg-claude-accent text-claude-bg hover:bg-claude-accent-hover disabled:opacity-30 disabled:hover:bg-claude-accent transition-colors"
               title={isStreaming ? t("停止", "Stop") : t("发送", "Send")}
             >

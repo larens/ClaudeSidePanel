@@ -14,17 +14,43 @@ export function usePersistence() {
   const messages = useChatStore((s) => s.messages);
   const activeSessionId = useSessionStore((s) => s.activeSessionId);
   const loadMessages = useChatStore((s) => s.loadMessages);
+  const isStreaming = useChatStore((s) => s.isStreaming);
+  const persistTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Persist messages whenever they change
+  // Persist messages — debounced during streaming, immediate when done
   useEffect(() => {
     if (!activeSessionId || messages.length === 0) return;
     const key = MSG_PREFIX + activeSessionId;
-    try {
-      chrome.storage.local.set({ [key]: messages });
-    } catch {
-      // chrome.storage not available in dev
+
+    if (persistTimerRef.current) {
+      clearTimeout(persistTimerRef.current);
+      persistTimerRef.current = null;
     }
-  }, [messages, activeSessionId]);
+
+    if (!isStreaming) {
+      try {
+        chrome.storage.local.set({ [key]: messages });
+      } catch {
+        // chrome.storage not available in dev
+      }
+      return;
+    }
+
+    // During streaming, debounce at 500ms
+    persistTimerRef.current = setTimeout(() => {
+      try {
+        chrome.storage.local.set({ [key]: messages });
+      } catch {
+        // ignore
+      }
+    }, 500);
+
+    return () => {
+      if (persistTimerRef.current) {
+        clearTimeout(persistTimerRef.current);
+      }
+    };
+  }, [messages, activeSessionId, isStreaming]);
 
   // Track which history sessions have been loaded to avoid re-loading
   const loadedHistoryRef = useRef(new Set<string>());

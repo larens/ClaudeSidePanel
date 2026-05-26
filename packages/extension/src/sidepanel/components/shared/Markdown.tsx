@@ -1,17 +1,24 @@
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
-import { Component, useState, type ReactNode } from "react";
+import { Component, useDeferredValue, useState, type ReactNode } from "react";
 
 interface Props {
   content: string;
+  streaming?: boolean;
 }
 
-export function Markdown({ content }: Props) {
+export function Markdown({ content, streaming }: Props) {
+  const displayContent = streaming ? useDeferredValue(content) : content;
+
   return (
-    <div className="prose-claude text-sm leading-relaxed">
+    <div
+      data-streaming={streaming || undefined}
+      className="prose-claude text-sm leading-relaxed streaming-cursor"
+    >
       <MarkdownErrorBoundary content={content}>
         <ReactMarkdown
+          children={displayContent}
           remarkPlugins={[remarkGfm]}
           rehypePlugins={[rehypeHighlight]}
           components={{

@@ -30,6 +30,132 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   }
 });
 
+// Listen for screenshot preview from background service worker
+chrome.runtime.onMessage.addListener((message) => {
+  if (message.type !== "screenshot-area-preview") return;
+  const { dataUrl, rect } = message.payload ?? {};
+  if (!dataUrl || !rect) return;
+
+  const isZh = (navigator.language || "").toLowerCase().startsWith("zh");
+
+  // Remove any existing preview
+  document.querySelectorAll('[data-screenshot-preview="true"]').forEach((el) => el.remove());
+
+  const img = new Image();
+  img.onload = () => {
+    const dpr = window.devicePixelRatio || 1;
+    const sx = Math.round(rect.x * dpr);
+    const sy = Math.round(rect.y * dpr);
+    const sw = Math.round(rect.width * dpr);
+    const sh = Math.round(rect.height * dpr);
+
+    const canvas = document.createElement("canvas");
+    canvas.width = sw;
+    canvas.height = sh;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    ctx.drawImage(img, sx, sy, sw, sh, 0, 0, sw, sh);
+    const croppedDataUrl = canvas.toDataURL("image/png");
+
+    const host = document.createElement("div");
+    host.setAttribute("data-screenshot-preview", "true");
+    const root = host.attachShadow({ mode: "closed" });
+
+    const overlay = document.createElement("div");
+    overlay.style.cssText =
+      "position:fixed;left:0;top:0;right:0;bottom:0;" +
+      "background:rgba(0,0,0,0.55);z-index:2147483645;" +
+      "display:flex;align-items:center;justify-content:center;flex-direction:column;";
+
+    const container = document.createElement("div");
+    container.style.cssText =
+      "position:relative;max-width:85vw;max-height:70vh;" +
+      "padding:12px;background:#1a1a2e;border-radius:12px;" +
+      "box-shadow:0 8px 32px rgba(0,0,0,0.5);";
+
+    const previewImg = document.createElement("img");
+    previewImg.src = croppedDataUrl;
+    previewImg.style.cssText =
+      "display:block;max-width:100%;max-height:60vh;border-radius:4px;object-fit:contain;";
+
+    const sizeHint = document.createElement("div");
+    sizeHint.style.cssText =
+      "margin-top:10px;text-align:center;color:#999;font:12px -apple-system,sans-serif;";
+    sizeHint.textContent = `${Math.round(rect.width)} × ${Math.round(rect.height)} px`;
+
+    const btnRow = document.createElement("div");
+    btnRow.style.cssText = "display:flex;gap:12px;margin-top:14px;justify-content:center;";
+
+    const cancelBtn = document.createElement("button");
+    cancelBtn.style.cssText =
+      "padding:8px 24px;border-radius:8px;border:1px solid #555;background:#2a2a3e;" +
+      "color:#aaa;font:13px -apple-system,sans-serif;cursor:pointer;transition:all 0.2s;";
+    cancelBtn.textContent = isZh ? "取消" : "Cancel";
+
+    const confirmBtn = document.createElement("button");
+    confirmBtn.style.cssText =
+      "padding:8px 24px;border-radius:8px;border:none;background:#4ade80;" +
+      "color:#000;font:13px -apple-system,sans-serif;cursor:pointer;font-weight:600;" +
+      "transition:all 0.2s;";
+    confirmBtn.textContent = isZh ? "确认" : "Confirm";
+
+    const cleanup = () => {
+      overlay.removeEventListener("click", onOverlayClick);
+      cancelBtn.removeEventListener("click", onCancel);
+      confirmBtn.removeEventListener("click", onConfirm);
+      window.removeEventListener("keydown", onKey, true);
+      host.remove();
+    };
+
+    const onOverlayClick = (e) => {
+      if (e.target === overlay) cleanup();
+    };
+
+    const onCancel = () => cleanup();
+
+    const onConfirm = () => {
+      chrome.runtime.sendMessage({
+        type: "screenshot-confirmed",
+        payload: { croppedDataUrl },
+      });
+      cleanup();
+    };
+
+    const onKey = (e) => {
+      if (e.key === "Escape") cleanup();
+    };
+
+    cancelBtn.addEventListener("click", onCancel);
+    cancelBtn.addEventListener("mouseenter", () => {
+      cancelBtn.style.background = "#3a3a5e";
+      cancelBtn.style.color = "#fff";
+    });
+    cancelBtn.addEventListener("mouseleave", () => {
+      cancelBtn.style.background = "#2a2a3e";
+      cancelBtn.style.color = "#aaa";
+    });
+    confirmBtn.addEventListener("click", onConfirm);
+    confirmBtn.addEventListener("mouseenter", () => {
+      confirmBtn.style.background = "#22c55e";
+    });
+    confirmBtn.addEventListener("mouseleave", () => {
+      confirmBtn.style.background = "#4ade80";
+    });
+    overlay.addEventListener("click", onOverlayClick);
+    window.addEventListener("keydown", onKey, true);
+
+    btnRow.appendChild(cancelBtn);
+    btnRow.appendChild(confirmBtn);
+    container.appendChild(previewImg);
+    container.appendChild(sizeHint);
+    container.appendChild(btnRow);
+    overlay.appendChild(container);
+    root.appendChild(overlay);
+    document.documentElement.appendChild(host);
+  };
+  img.src = dataUrl;
+});
+
 function extractPageContext(options) {
   const maxLen = options?.maxLength ?? 10000;
   const selectedText = window.getSelection()?.toString().trim() ?? "";
@@ -289,7 +415,6 @@ function enterInspectMode() {
     if (!state.selectedEl) return;
     const el = state.selectedEl;
     const selector = getStableSelector(el);
-    const outerHTML = el.outerHTML ?? "";
     const rect = el.getBoundingClientRect();
     const boundingRect = {
       top: Math.round(rect.top),
@@ -300,9 +425,11 @@ function enterInspectMode() {
     const pagePath = buildPagePath(el);
     const nearbyText = buildNearbyText(el);
     const preview = buildPreview(el, selector, boundingRect);
+    const elementStructure = buildElementStructure(el);
+    const elementText = extractElementText(el);
     chrome.runtime.sendMessage({
       type: "inspect-element-selected",
-      payload: { selector, outerHTML, preview, boundingRect, pagePath, nearbyText },
+      payload: { selector, elementStructure, elementText, preview, boundingRect, pagePath, nearbyText },
     });
     exitInspectMode();
   };
@@ -339,6 +466,46 @@ function exitInspectMode() {
   state.host.remove();
   inspectState = null;
   chrome.runtime.sendMessage({ type: "inspect-mode-exited" });
+}
+
+function buildElementStructure(el, depth, maxDepth) {
+  if (depth === undefined) depth = 0;
+  if (maxDepth === undefined) maxDepth = 8;
+  if (!el || depth > maxDepth) return "";
+  var indent = "  ".repeat(depth);
+  var tag = el.tagName.toLowerCase();
+  var attrs = "";
+  if (el.id) attrs += " #" + el.id;
+  if (el.classList && el.classList.length) {
+    attrs += " ." + Array.from(el.classList).slice(0, 3).join(".");
+  }
+  if (tag !== "div") {
+    attrs += " [" + tag + "]";
+    tag = "div";
+  }
+  var line = indent + "<" + tag + attrs + ">";
+  var children = [];
+  for (var i = 0; i < el.children.length; i++) {
+    var child = el.children[i];
+    if (child.nodeType !== 1) continue;
+    var childTag = child.tagName.toLowerCase();
+    if (childTag === "script" || childTag === "style" || childTag === "noscript") continue;
+    var childStr = buildElementStructure(child, depth + 1, maxDepth);
+    if (childStr) children.push(childStr);
+  }
+  if (children.length === 0) return line;
+  return line + "\n" + children.join("\n");
+}
+
+function extractElementText(el) {
+  var walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT, null);
+  var parts = [];
+  var node;
+  while ((node = walker.nextNode())) {
+    var text = node.textContent.trim();
+    if (text) parts.push(text);
+  }
+  return parts.join(" ").replace(/\s+/g, " ").trim().slice(0, 5000);
 }
 
 function buildPreview(el, selector, rect) {
@@ -509,6 +676,8 @@ function enterScreenshotMode() {
 }
 
 function exitScreenshotMode() {
+  // Clean up any existing preview overlay
+  document.querySelectorAll('[data-screenshot-preview="true"]').forEach((el) => el.remove());
   if (!screenshotState) return;
   const { host, overlay, onDown, onMove, onUp, onKey } = screenshotState;
   overlay.removeEventListener("mousedown", onDown);

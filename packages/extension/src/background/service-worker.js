@@ -137,7 +137,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 
   if (message.type === "screenshot-area-selected") {
-    const rect = message.payload;
+    const { rect } = message.payload;
+    const sourceTabId = sender.tab?.id;
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
       const windowId = tabs[0]?.windowId;
       if (typeof windowId !== "number") {
@@ -154,11 +155,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           return;
         }
 
-        // Relay full screenshot + crop rect to sidepanel for client-side cropping
-        chrome.runtime.sendMessage({
-          type: "screenshot-area-cropped",
-          payload: { dataUrl, rect },
-        });
+        // Send full screenshot + crop rect to content script for preview
+        if (sourceTabId) {
+          chrome.tabs.sendMessage(sourceTabId, {
+            type: "screenshot-area-preview",
+            payload: { dataUrl, rect },
+          });
+        }
         sendResponse({ ok: true });
       });
     });

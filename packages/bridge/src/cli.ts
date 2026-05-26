@@ -4,7 +4,7 @@ import { EventEmitter } from "node:events";
 // ── Claude CLI stream-json event types ────────────────────
 
 export interface CLIEvent {
-  type: "system" | "assistant" | "result";
+  type: "system" | "assistant" | "user" | "result";
   subtype?: string;
   session_id?: string;
   // system/init fields
@@ -24,7 +24,7 @@ export interface CLIEvent {
 export interface AssistantMessage {
   id: string;
   type: "message";
-  role: "assistant";
+  role: "assistant" | "user";
   model: string;
   content: ContentBlock[];
   usage?: TokenUsage;
@@ -42,7 +42,7 @@ export type ContentBlock =
   | {
       type: "tool_result";
       tool_use_id: string;
-      content: string;
+      content: string | Array<{ type: string; text?: string }>;
       is_error?: boolean;
     };
 
@@ -50,6 +50,18 @@ export interface TokenUsage {
   input_tokens: number;
   output_tokens: number;
   cache_read_input_tokens?: number;
+}
+
+function normalizeToolContent(content: string | Array<{ type: string; text?: string }> | undefined): string {
+  if (!content) return "";
+  if (typeof content === "string") return content;
+  if (Array.isArray(content)) {
+    return content
+      .filter((b) => b.type === "text" && b.text)
+      .map((b) => b.text)
+      .join("\n");
+  }
+  return String(content);
 }
 
 // ── CLISession ────────────────────────────────────────────
@@ -225,10 +237,27 @@ export class CLISession extends EventEmitter {
               this.emit("tool_result", {
                 messageId: msg.id,
                 toolUseId: block.tool_use_id,
-                content: block.content,
+                content: normalizeToolContent(block.content),
                 isError: block.is_error,
               });
               break;
+          }
+        }
+        break;
+      }
+
+      case "user": {
+        const msg = event.message;
+        if (!msg) return;
+        for (const block of msg.content) {
+          if (block.type === "tool_result") {
+            const content = normalizeToolContent(block.content);
+            this.emit("tool_result", {
+              messageId: msg.id,
+              toolUseId: block.tool_use_id,
+              content,
+              isError: block.is_error,
+            });
           }
         }
         break;

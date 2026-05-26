@@ -8,13 +8,31 @@ export function ChatView() {
   const t = (zh: string, en: string) => (isZh ? zh : en);
 
   const messages = useChatStore((s) => s.messages);
+  const isStreaming = useChatStore((s) => s.isStreaming);
   const scrollRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const isNearBottomRef = useRef(true);
+
+  const handleScroll = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const threshold = 100;
+    isNearBottomRef.current =
+      el.scrollHeight - el.scrollTop - el.clientHeight < threshold;
+  }, []);
 
   // Auto-scroll on new messages
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
+    if (!isNearBottomRef.current) return;
+    bottomRef.current?.scrollIntoView({
+      behavior: isStreaming ? "instant" : "smooth",
+    });
+  }, [messages, isStreaming]);
+
+  // Jump to bottom on mount (messages loaded from storage)
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: "instant" });
+  }, []);
 
   const handleRetry = useCallback(
     (messageId: string) => {
@@ -78,6 +96,7 @@ export function ChatView() {
     <div
       ref={scrollRef}
       className="flex-1 overflow-y-auto px-3 py-4"
+      onScroll={handleScroll}
     >
       {groups.map((group) => {
         if (group.role === "user") {
