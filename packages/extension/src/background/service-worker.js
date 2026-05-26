@@ -135,4 +135,33 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     });
     return true;
   }
+
+  if (message.type === "screenshot-area-selected") {
+    const rect = message.payload;
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      const windowId = tabs[0]?.windowId;
+      if (typeof windowId !== "number") {
+        sendResponse({ ok: false, error: "No active window" });
+        return;
+      }
+
+      chrome.tabs.captureVisibleTab(windowId, { format: "png" }, (dataUrl) => {
+        if (chrome.runtime.lastError || !dataUrl) {
+          sendResponse({
+            ok: false,
+            error: chrome.runtime.lastError?.message ?? "Capture failed",
+          });
+          return;
+        }
+
+        // Relay full screenshot + crop rect to sidepanel for client-side cropping
+        chrome.runtime.sendMessage({
+          type: "screenshot-area-cropped",
+          payload: { dataUrl, rect },
+        });
+        sendResponse({ ok: true });
+      });
+    });
+    return true;
+  }
 });

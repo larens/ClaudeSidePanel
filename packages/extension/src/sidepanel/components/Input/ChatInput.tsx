@@ -21,6 +21,40 @@ function extractTag(text: string): string {
   return "<el>";
 }
 
+function cropScreenshot(
+  dataUrl: string,
+  rect: { x: number; y: number; width: number; height: number }
+): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      const dpr = window.devicePixelRatio || 1;
+      const sx = Math.round(rect.x * dpr);
+      const sy = Math.round(rect.y * dpr);
+      const sw = Math.round(rect.width * dpr);
+      const sh = Math.round(rect.height * dpr);
+      const canvas = document.createElement("canvas");
+      canvas.width = sw;
+      canvas.height = sh;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) {
+        reject(new Error("Canvas context not available"));
+        return;
+      }
+      ctx.drawImage(img, sx, sy, sw, sh, 0, 0, sw, sh);
+      const croppedUrl = canvas.toDataURL("image/png");
+      const base64 = croppedUrl.split(",")[1] ?? "";
+      if (!base64) {
+        reject(new Error("Failed to export cropped image"));
+        return;
+      }
+      resolve(base64);
+    };
+    img.onerror = () => reject(new Error("Failed to load screenshot image"));
+    img.src = dataUrl;
+  });
+}
+
 export function ChatInput() {
   const isZh = navigator.language?.toLowerCase().startsWith("zh");
   const t = useCallback(
@@ -35,7 +69,14 @@ export function ChatInput() {
   const [isRecording, setIsRecording] = useState(false);
   const [isInspecting, setIsInspecting] = useState(false);
   const inspectSnippetsRef = useRef(
-    new Map<string, { selector: string; outerHTML: string; preview: string }>()
+    new Map<string, {
+      selector: string;
+      outerHTML: string;
+      preview: string;
+      boundingRect?: { top: number; left: number; width: number; height: number };
+      pagePath?: string;
+      nearbyText?: string;
+    }>()
   );
   const {
     addUserMessage,
@@ -108,9 +149,18 @@ export function ChatInput() {
             toolCall?: ToolCallInfo;
           };
 
+          console.log("[ChatInput] chunk received:", {
+            blockType: payload.blockType,
+            hasDelta: Boolean(payload.delta),
+            deltaPreview: payload.delta?.slice(0, 50),
+            hasToolCall: Boolean(payload.toolCall),
+            toolCallName: payload.toolCall?.name,
+          });
+
           if (payload.blockType === "thinking" && payload.delta) {
             appendThinking(assistantId, payload.delta);
           } else if (payload.blockType === "text" && payload.delta) {
+            console.log("[ChatInput] Appending text:", payload.delta.slice(0, 80));
             appendText(assistantId, payload.delta);
           }
 
@@ -120,10 +170,19 @@ export function ChatInput() {
         },
         (msg) => {
           const result = msg.payload as { text?: string };
+          console.log("[ChatInput] complete received:", {
+            hasText: Boolean(result?.text),
+            textPreview: result?.text?.slice(0, 80),
+            assistantId,
+          });
           if (result?.text) {
             const current = useChatStore.getState().messages.find((m) => m.id === assistantId);
+            console.log("[ChatInput] current message content:", current?.content?.slice(0, 80));
             if (!current?.content) {
+              console.log("[ChatInput] Appending result text");
               appendText(assistantId, result.text);
+            } else {
+              console.log("[ChatInput] Skipping result text (already has content)");
             }
           }
           completeMessage(assistantId);
@@ -151,8 +210,16 @@ export function ChatInput() {
     return text.replace(/<<i:([a-z0-9]+)>>\S*/gi, (_match, id) => {
       const data = inspectSnippetsRef.current.get(String(id));
       if (!data) return "";
-      const selectorLine = data.selector ? `Selector: ${data.selector}\n` : "";
-      return `[Selected element]\n${selectorLine}HTML:\n\`\`\`html\n${data.outerHTML}\n\`\`\``;
+      const parts: string[] = ["[Selected Element]"];
+      if (data.pagePath) parts.push(`Page path: ${data.pagePath}`);
+      if (data.boundingRect) {
+        const r = data.boundingRect;
+        parts.push(`Position: top=${r.top}, left=${r.left}, size=${r.width}x${r.height}`);
+      }
+      if (data.nearbyText) parts.push(`Nearby text: "${data.nearbyText}"`);
+      if (data.selector) parts.push(`CSS Selector: ${data.selector}`);
+      parts.push(`HTML:\n\`\`\`html\n${data.outerHTML}\n\`\`\``);
+      return parts.join("\n");
     });
   }, []);
 
@@ -218,7 +285,14 @@ export function ChatInput() {
       }
       if (msg?.type !== "inspect-element-selected") return;
       const payload = msg?.payload as
-        | { selector: string; outerHTML: string; preview: string }
+        | {
+            selector: string;
+            outerHTML: string;
+            preview: string;
+            boundingRect?: { top: number; left: number; width: number; height: number };
+            pagePath?: string;
+            nearbyText?: string;
+          }
         | undefined;
       if (!payload?.outerHTML) return;
       const id = Math.random().toString(36).slice(2, 8);
@@ -226,9 +300,12 @@ export function ChatInput() {
         selector: payload.selector ?? "",
         outerHTML: payload.outerHTML,
         preview: payload.preview ?? "",
+        boundingRect: payload.boundingRect,
+        pagePath: payload.pagePath,
+        nearbyText: payload.nearbyText,
       });
       const tag = extractTag(payload.selector || payload.preview || "");
-      const line = `<<i:${id}>>${tag}`;
+      const line = `<<i:${id}>>[${tag}]`;
       setMessage((m) => `${m}${m ? "\n" : ""}${line}`);
       setTimeout(() => {
         const textarea = textareaRef.current;
@@ -351,37 +428,61 @@ export function ChatInput() {
     setTimeout(() => textareaRef.current?.focus(), 50);
   }, [activeWorkspace, writeFileToWorkspace, t]);
 
+  // Listen for cropped screenshot data from area selection
+  useEffect(() => {
+    const handler = (msg: any) => {
+      if (msg?.type !== "screenshot-area-cropped") return;
+      const { dataUrl, rect } = msg?.payload ?? {};
+      if (!dataUrl || !rect) return;
+      (async () => {
+        try {
+          const croppedBase64 = await cropScreenshot(dataUrl, rect);
+          const relativePath = `.claudeweb/attachments/${Date.now()}-screenshot.png`;
+          const saved = await writeFileToWorkspace(relativePath, croppedBase64);
+          if (saved) {
+            setMessage((m) => `${m}${m ? "\n" : ""}${saved}`);
+            setTimeout(() => textareaRef.current?.focus(), 50);
+          } else {
+            useChatStore
+              .getState()
+              .addSystemMessage(t("保存截图失败", "Failed to save screenshot"));
+          }
+        } catch {
+          useChatStore
+            .getState()
+            .addSystemMessage(t("截图裁剪失败", "Failed to crop screenshot"));
+        }
+      })();
+    };
+    chrome.runtime.onMessage.addListener(handler);
+    return () => chrome.runtime.onMessage.removeListener(handler);
+  }, [writeFileToWorkspace, t]);
+
   const handleScreenshot = useCallback(async () => {
     if (!canUseWorkspace || !activeWorkspace) return;
-    try {
-      const response = await new Promise<{
-        ok: boolean;
-        dataUrl?: string;
-        error?: string;
-      }>((resolve) => {
-        chrome.runtime.sendMessage({ type: "capture-visible-tab" }, resolve);
-      });
-      if (!response?.ok || !response.dataUrl) {
-        throw new Error(response?.error ?? "Capture failed");
-      }
-      const dataUrl = response.dataUrl;
-
-      const base64 = dataUrl.split(",")[1] ?? "";
-      if (!base64) throw new Error("Capture failed");
-
-      const relativePath = `.claudeweb/attachments/${Date.now()}-screenshot.png`;
-      const saved = await writeFileToWorkspace(relativePath, base64);
-      if (!saved) throw new Error("Failed to save screenshot");
-
-      setMessage((m) => `${m}${m ? "\n" : ""}${saved}`);
-      setTimeout(() => textareaRef.current?.focus(), 50);
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : "Capture failed";
+    const tabId = await getActiveTabId();
+    if (!tabId) {
       useChatStore
         .getState()
-        .addSystemMessage(t(`截图失败：${msg}`, `Failed to capture screenshot: ${msg}`));
+        .addSystemMessage(t("未找到可用的浏览器标签页", "No active tab found"));
+      return;
     }
-  }, [activeWorkspace, canUseWorkspace, writeFileToWorkspace, t]);
+    // Enter area selection mode on the page — result comes back via
+    // "screenshot-area-cropped" message handled in the useEffect above
+    chrome.tabs.sendMessage(tabId, { type: "screenshot-mode" }, (resp) => {
+      const err = chrome.runtime.lastError?.message;
+      if (err || !(resp as any)?.ok) {
+        useChatStore
+          .getState()
+          .addSystemMessage(
+            t(
+              "启动截图模式失败，请刷新网页后重试",
+              "Failed to start screenshot mode. Refresh the page and try again."
+            )
+          );
+      }
+    });
+  }, [activeWorkspace, canUseWorkspace, getActiveTabId, t]);
 
   const handleToggleVoice = useCallback(() => {
     if (!canUseWorkspace) return;

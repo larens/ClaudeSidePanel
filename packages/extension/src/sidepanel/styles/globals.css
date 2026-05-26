@@ -3,12 +3,12 @@
 @tailwind utilities;
 
 :root {
-  --color-bg: #1a1a1a;
-  --color-surface: #242424;
-  --color-surface-raised: #2e2e2e;
-  --color-border: #333333;
-  --color-text: #e5e5e5;
-  --color-muted: #888888;
+  --color-bg: #1e1e1e;
+  --color-surface: #2a2a2a;
+  --color-surface-raised: #313131;
+  --color-border: #5a5a5a;
+  --color-text: #cccccc;
+  --color-muted: #808080;
   --color-accent: #d4a574;
   --color-accent-hover: #e0b88a;
   --color-success: #4ade80;
@@ -18,11 +18,11 @@
 
 .light {
   --color-bg: #ffffff;
-  --color-surface: #f5f5f5;
+  --color-surface: #f3f3f3;
   --color-surface-raised: #ebebeb;
   --color-border: #e0e0e0;
-  --color-text: #1a1a1a;
-  --color-muted: #666666;
+  --color-text: #1e1e1e;
+  --color-muted: #616161;
   --color-accent: #b8864e;
   --color-accent-hover: #a0703a;
   --color-success: #16a34a;
@@ -34,6 +34,7 @@
   box-sizing: border-box;
   margin: 0;
   padding: 0;
+  border-color: var(--color-border);
 }
 
 html,
@@ -69,8 +70,8 @@ body {
 
 /* Code block styles */
 pre code.hljs {
-  padding: 0.75rem 1rem;
-  border-radius: 0.5rem;
+  padding: 0.625rem 0.875rem;
+  border-radius: 0.375rem;
   font-size: 0.8125rem;
   line-height: 1.5;
 }
@@ -80,4 +81,128 @@ code:not(.hljs) {
   padding: 0.125rem 0.375rem;
   border-radius: 0.25rem;
   font-size: 0.8125rem;
+}
+
+/* ── Prose styles for Claude markdown output ──────────────── */
+.prose-claude h1 {
+  font-size: 1.25rem;
+  font-weight: 600;
+  margin: 0.75rem 0 0.375rem;
+  color: var(--color-text);
+}
+.prose-claude h1:first-child { margin-top: 0; }
+
+.prose-claude h2 {
+  font-size: 1.125rem;
+  font-weight: 600;
+  margin: 0.75rem 0 0.375rem;
+  color: var(--color-text);
+}
+.prose-claude h2:first-child { margin-top: 0; }
+
+.prose-claude h3 {
+  font-size: 1rem;
+  font-weight: 600;
+  margin: 0.625rem 0 0.25rem;
+  color: var(--color-text);
+}
+.prose-claude h3:first-child { margin-top: 0; }
+
+.prose-claude h4 {
+  font-size: 0.875rem;
+  font-weight: 600;
+  margin: 0.5rem 0 0.25rem;
+  color: var(--color-text);
+}
+
+.prose-claude p {
+  margin: 0.375rem 0;
+  line-height: 1.625;
+}
+
+.prose-claude p:first-child { margin-top: 0; }
+.prose-claude p:last-child { margin-bottom: 0; }
+
+.prose-claude ul,
+.prose-claude ol {
+  margin: 0.375rem 0;
+  padding-left: 1.25rem;
+}
+
+.prose-claude li {
+  margin: 0.125rem 0;
+  line-height: 1.5;
+}
+
+.prose-claude li > ul,
+.prose-claude li > ol {
+  margin: 0.125rem 0;
+}
+
+.prose-claude pre {
+  margin: 0.5rem 0;
+  border-radius: 0.375rem;
+  overflow-x: auto;
+}
+
+.prose-claude blockquote {
+  border-left: 2px solid var(--color-accent);
+  padding-left: 0.75rem;
+  margin: 0.5rem 0;
+  color: var(--color-muted);
+  font-style: italic;
+}
+
+.prose-claude hr {
+  border: none;
+  border-top: 1px solid var(--color-border);
+  margin: 0.75rem 0;
+}
+
+.prose-claude strong {
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.prose-claude em {
+  font-style: italic;
+}
+
+.prose-claude a {
+  color: var(--color-accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.prose-claude a:hover {
+  color: var(--color-accent-hover);
+}
+
+.prose-claude img {
+  max-width: 100%;
+  border-radius: 0.375rem;
+  margin: 0.5rem 0;
+}
+
+.prose-claude table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 0.5rem 0;
+  font-size: 0.8125rem;
+}
+
+.prose-claude th,
+.prose-claude td {
+  border: 1px solid var(--color-border);
+  padding: 0.375rem 0.5rem;
+  text-align: left;
+}
+
+.prose-claude th {
+  background: var(--color-surface);
+  font-weight: 600;
+}
+
+.prose-claude del {
+  color: var(--color-muted);
+  text-decoration: line-through;
 }

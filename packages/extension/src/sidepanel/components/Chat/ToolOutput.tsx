@@ -44,16 +44,25 @@ function EditOutput({
   const oldStr = String(input.old_string ?? input.oldString ?? "");
   const newStr = String(input.new_string ?? input.newString ?? "");
 
-  // If we have old/new strings, show a proper diff
-  if (oldStr && newStr) {
-    return <DiffView oldString={oldStr} newString={newStr} filePath={filePath} />;
-  }
-
-  // Fallback to raw output
   return (
-    <pre className="p-2 bg-claude-bg rounded text-claude-muted text-xs overflow-x-auto max-h-40 overflow-y-auto">
-      {output}
-    </pre>
+    <div className="space-y-1.5">
+      {/* Diff view — fixed height, scrollable */}
+      {oldStr && newStr && (
+        <DiffView oldString={oldStr} newString={newStr} filePath={filePath} maxHeight="max-h-60" />
+      )}
+      {/* Result summary */}
+      {output && (
+        <div className="text-xs text-claude-muted bg-claude-bg/50 rounded px-2.5 py-1.5">
+          {output}
+        </div>
+      )}
+      {/* Fallback: no diff, just raw output */}
+      {!oldStr && !newStr && output && (
+        <pre className="p-2 bg-claude-bg rounded text-claude-muted text-xs overflow-x-auto max-h-40 overflow-y-auto">
+          {output}
+        </pre>
+      )}
+    </div>
   );
 }
 
@@ -118,8 +127,8 @@ function SearchOutput({
   toolName: string;
 }) {
   return (
-    <div className="rounded-lg border border-claude-border/50 overflow-hidden text-xs">
-      <div className="flex items-center gap-2 px-3 py-1.5 bg-claude-surface/80 border-b border-claude-border/50">
+    <div className="rounded-md border border-claude-border/30 overflow-hidden text-xs">
+      <div className="flex items-center gap-2 px-3 py-1.5 bg-claude-surface border-b border-claude-border/30">
         <svg
           width="12"
           height="12"

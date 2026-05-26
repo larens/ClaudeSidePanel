@@ -12,9 +12,10 @@ interface Props {
   newString: string;
   filePath?: string;
   expanded?: boolean;
+  maxHeight?: string;
 }
 
-export function DiffView({ oldString, newString, filePath, expanded: initialExpanded = true }: Props) {
+export function DiffView({ oldString, newString, filePath, expanded: initialExpanded = true, maxHeight }: Props) {
   const [expanded, setExpanded] = useState(initialExpanded);
   const lines = useMemo(() => computeDiff(oldString, newString), [oldString, newString]);
 
@@ -29,11 +30,11 @@ export function DiffView({ oldString, newString, filePath, expanded: initialExpa
   }, [lines]);
 
   return (
-    <div className="rounded-lg border border-claude-border/50 overflow-hidden text-xs">
+    <div className="rounded-md border border-claude-border/15 overflow-hidden text-xs">
       {/* Header */}
       <button
         onClick={() => setExpanded(!expanded)}
-        className="flex items-center gap-2 w-full px-3 py-2 bg-claude-surface/80 hover:bg-claude-border/30 transition-colors text-left"
+        className="flex items-center gap-2 w-full px-3 py-2 bg-claude-surface hover:bg-claude-border/20 transition-colors text-left"
       >
         <svg
           width="12"
@@ -73,7 +74,7 @@ export function DiffView({ oldString, newString, filePath, expanded: initialExpa
 
       {/* Diff content */}
       {expanded && (
-        <div className="max-h-80 overflow-y-auto">
+        <div className={`${maxHeight ?? "max-h-80"} overflow-y-auto`}>
           <table className="w-full border-collapse">
             <tbody>
               {lines.map((line, i) => (
@@ -87,10 +88,10 @@ export function DiffView({ oldString, newString, filePath, expanded: initialExpa
                       : ""
                   }
                 >
-                  <td className="w-8 px-1 py-0 text-right text-claude-muted/50 select-none border-r border-claude-border/30">
+                  <td className="w-8 px-1 py-0 text-right text-claude-muted/50 select-none border-r border-claude-border/15">
                     {line.oldLine ?? ""}
                   </td>
-                  <td className="w-8 px-1 py-0 text-right text-claude-muted/50 select-none border-r border-claude-border/30">
+                  <td className="w-8 px-1 py-0 text-right text-claude-muted/50 select-none border-r border-claude-border/15">
                     {line.newLine ?? ""}
                   </td>
                   <td className="w-5 px-0.5 py-0 text-center select-none">

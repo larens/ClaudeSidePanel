@@ -39,18 +39,14 @@ export function ChatView() {
   );
 
   if (messages.length === 0) {
-    const hints = isZh
-      ? ["解释这段代码", "帮我找一个 bug", "帮我写测试", "帮我重构"]
-      : ["Explain this code", "Find a bug", "Write tests", "Refactor"];
-
     return (
       <div className="flex-1 flex items-center justify-center p-6">
         <div className="text-center space-y-4 max-w-xs">
-          <div className="w-16 h-16 mx-auto rounded-2xl bg-claude-surface flex items-center justify-center border border-claude-border">
-            <div className="w-10 h-10 rounded-full bg-claude-accent flex items-center justify-center">
-              <span className="text-lg font-bold text-claude-bg">C</span>
-            </div>
-          </div>
+          <img
+            src="/icons/icon128.svg"
+            alt="ClaudeSidePanel"
+            className="w-16 h-16 mx-auto rounded-2xl"
+          />
           <div>
             <h2 className="text-lg font-semibold text-claude-text">
               ClaudeSidePanel
@@ -63,24 +59,7 @@ export function ChatView() {
             </p>
           </div>
           <div className="space-y-2 text-xs text-claude-muted">
-            <div className="flex flex-wrap justify-center gap-2">
-              {hints.map((hint) => (
-                <button
-                  key={hint}
-                  onClick={() =>
-                    window.dispatchEvent(
-                      new CustomEvent("claude-web-auto-send", {
-                        detail: { prompt: hint, autoSubmit: true },
-                      })
-                    )
-                  }
-                  className="px-2.5 py-1 rounded-full border border-claude-border text-claude-muted hover:text-claude-text hover:border-claude-accent/50 transition-colors"
-                >
-                  {hint}
-                </button>
-              ))}
-            </div>
-            <p className="pt-2">
+            <p>
               {t("请确保本地服务已启动：", "Make sure the bridge is running:")}
             </p>
             <code className="inline-block px-2 py-1 bg-claude-surface rounded text-claude-accent">
@@ -103,7 +82,7 @@ export function ChatView() {
       {groups.map((group) => {
         if (group.role === "user") {
           return (
-            <div key={group.key} className="mb-4">
+            <div key={group.key} className="mb-3">
               <MessageBubble
                 message={group.messages[0]}
                 onRetry={handleRetry}
@@ -114,14 +93,14 @@ export function ChatView() {
 
         // Consecutive assistant messages — shared timeline
         return (
-          <div key={group.key} className="relative mb-4">
+          <div key={group.key} className="relative mb-3">
             {/* Continuous vertical line spanning all messages */}
             <div
-              className="absolute left-[3px] top-0 bottom-0 w-[1.5px] rounded-full"
-              style={{ backgroundColor: "rgba(136,136,136,0.25)" }}
+              className="absolute left-[3px] top-0 bottom-0 w-px rounded-full"
+              style={{ backgroundColor: "rgba(128,128,128,0.3)" }}
             />
             {group.messages.map((msg) => (
-              <div key={msg.id} className="mb-4">
+              <div key={msg.id} className="mb-3">
                 <MessageBubble
                   message={msg}
                   onRetry={handleRetry}

@@ -61,6 +61,9 @@ export class CLISession extends EventEmitter {
   private buffer = "";
   private cliSessionId: string | null = null;
   private messageCount = 0;
+  // Track emitted text/thinking per message ID to prevent duplicate content
+  private emittedTextIds = new Set<string>();
+  private emittedThinkingIds = new Set<string>();
 
   constructor(id: string, cwd: string) {
     super();
@@ -77,6 +80,8 @@ export class CLISession extends EventEmitter {
     // Kill any running process
     this.kill();
     this.buffer = "";
+    this.emittedTextIds.clear();
+    this.emittedThinkingIds.clear();
     const args = [
       "--print",
       "--verbose",
@@ -174,20 +179,40 @@ export class CLISession extends EventEmitter {
       case "assistant": {
         const msg = event.message;
         if (!msg) return;
+
+        // Claude Code's stream-json sends multiple assistant events with the
+        // same message.id, each containing DIFFERENT content block types
+        // (e.g. event1 has thinking, event2 has text, event3 has tool_use).
+        // Deduplicate text/thinking per message.id to prevent duplicate emission,
+        // but always allow tool_use/tool_result through (they have unique IDs).
         for (const block of msg.content) {
           switch (block.type) {
-            case "text":
-              this.emit("text", {
-                messageId: msg.id,
-                text: block.text,
-              });
+            case "text": {
+              const textKey = `${msg.id}:text`;
+              if (!this.emittedTextIds.has(textKey)) {
+                this.emittedTextIds.add(textKey);
+                const textPreview = block.text?.slice(0, 80) ?? "";
+                console.log(`[CLI] Emitting text for ${msg.id}: "${textPreview}..."`);
+                this.emit("text", {
+                  messageId: msg.id,
+                  text: block.text,
+                });
+              } else {
+                console.log(`[CLI] Skipping duplicate text for ${msg.id}`);
+              }
               break;
-            case "thinking":
-              this.emit("thinking", {
-                messageId: msg.id,
-                thinking: block.thinking,
-              });
+            }
+            case "thinking": {
+              const thinkKey = `${msg.id}:thinking`;
+              if (!this.emittedThinkingIds.has(thinkKey)) {
+                this.emittedThinkingIds.add(thinkKey);
+                this.emit("thinking", {
+                  messageId: msg.id,
+                  thinking: block.thinking,
+                });
+              }
               break;
+            }
             case "tool_use":
               this.emit("tool_use", {
                 messageId: msg.id,

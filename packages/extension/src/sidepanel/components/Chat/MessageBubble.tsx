@@ -14,7 +14,7 @@ export function MessageBubble({ message, onRetry, timelineDotsOnly }: Props) {
   if (message.role === "system") {
     return (
       <div className="flex justify-center animate-fade-in">
-        <span className="text-xs text-claude-muted bg-claude-surface px-3 py-1 rounded-full border border-claude-border/50">
+        <span className="text-xs text-claude-muted bg-claude-surface px-3 py-1 rounded-full border border-claude-border/10">
           {message.content}
         </span>
       </div>
@@ -31,9 +31,9 @@ export function MessageBubble({ message, onRetry, timelineDotsOnly }: Props) {
       className={`animate-slide-up group flex ${isUser ? "justify-end" : "justify-start"}`}
     >
       <div
-        className={`max-w-[85%] relative ${
+        className={`max-w-[80%] relative ${
           isUser
-            ? "bg-claude-surface-raised text-claude-text rounded-2xl rounded-br-md px-3.5 py-2.5 border border-claude-border/10"
+            ? "bg-claude-surface text-claude-text rounded-lg px-3 py-2 border border-claude-border/15"
             : "text-claude-text"
         }`}
       >
@@ -55,15 +55,15 @@ export function MessageBubble({ message, onRetry, timelineDotsOnly }: Props) {
               <div className="relative">
                 {!timelineDotsOnly && (
                   <div
-                    className="absolute left-[3px] top-0 bottom-0 w-[1.5px] rounded-full"
-                    style={{ backgroundColor: "rgba(136,136,136,0.25)" }}
+                    className="absolute left-[3px] top-0 bottom-0 w-px rounded-full"
+                    style={{ backgroundColor: "rgba(128,128,128,0.3)" }}
                   />
                 )}
 
                 {/* Thinking block */}
                 {message.thinking && (
                   <div className="relative flex gap-2.5 pb-2">
-                    <span className="relative z-10 w-[7px] h-[7px] rounded-full bg-claude-muted shrink-0 mt-[11px]" />
+                    <span className="relative z-10 w-[6px] h-[6px] rounded-full bg-claude-muted shrink-0 mt-[11px]" />
                     <div className="flex-1 min-w-0">
                       <ThinkingBlock text={message.thinking} />
                     </div>
@@ -75,7 +75,7 @@ export function MessageBubble({ message, onRetry, timelineDotsOnly }: Props) {
                   <div className="space-y-1.5">
                     {message.toolCalls.map((tc) => (
                       <div key={tc.id} className="relative flex gap-2.5">
-                        <span className="relative z-10 w-[7px] h-[7px] rounded-full bg-claude-success shrink-0 mt-[11px]" />
+                        <span className="relative z-10 w-[6px] h-[6px] rounded-full bg-claude-success shrink-0 mt-[11px]" />
                         <div className="flex-1 min-w-0">
                           <ToolCallCard toolCall={tc} />
                         </div>
@@ -91,13 +91,8 @@ export function MessageBubble({ message, onRetry, timelineDotsOnly }: Props) {
 
             {/* Streaming indicator */}
             {message.isStreaming && !message.content && !message.thinking && (
-              <div className="flex items-center gap-1.5 text-claude-muted">
-                <div className="flex gap-1">
-                  <span className="w-1.5 h-1.5 rounded-full bg-claude-accent animate-bounce [animation-delay:0ms]" />
-                  <span className="w-1.5 h-1.5 rounded-full bg-claude-accent animate-bounce [animation-delay:150ms]" />
-                  <span className="w-1.5 h-1.5 rounded-full bg-claude-accent animate-bounce [animation-delay:300ms]" />
-                </div>
-                <span className="text-xs">Thinking...</span>
+              <div className="flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-claude-accent animate-pulse" />
               </div>
             )}
 
@@ -194,10 +189,10 @@ function ThinkingBlock({ text }: { text: string }) {
   const [expanded, setExpanded] = useState(false);
 
   return (
-    <div className="bg-claude-surface/50 rounded-lg overflow-hidden">
+    <div className="bg-claude-surface rounded-lg overflow-hidden border border-claude-border/10">
       <button
         onClick={() => setExpanded(!expanded)}
-        className="flex items-center gap-2 w-full px-3 py-1.5 text-xs text-claude-muted hover:bg-claude-border/20 transition-colors"
+        className="flex items-center gap-2 w-full px-2.5 py-1.5 text-xs text-claude-muted hover:bg-claude-border/20 transition-colors"
       >
         <svg
           width="12"
@@ -207,9 +202,9 @@ function ThinkingBlock({ text }: { text: string }) {
           stroke="currentColor"
           strokeWidth="2"
         >
-          <circle cx="12" cy="12" r="10" />
-          <path d="M12 16v-4" />
-          <path d="M12 8h.01" />
+          <path d="M9 18h6" />
+          <path d="M10 22h4" />
+          <path d="M15.09 14c.18-.98.65-1.74 1.41-2.5A4.65 4.65 0 0 0 18 8 6 6 0 0 0 6 8c0 1 .23 2.23 1.5 3.5A4.61 4.61 0 0 1 8.91 14" />
         </svg>
         <span>Thinking</span>
         <svg
@@ -225,7 +220,7 @@ function ThinkingBlock({ text }: { text: string }) {
         </svg>
       </button>
       {expanded && (
-        <div className="px-3 pb-2 text-xs text-claude-muted italic leading-relaxed max-h-48 overflow-y-auto">
+        <div className="px-3 pb-2 text-xs text-claude-muted leading-relaxed max-h-48 overflow-y-auto">
           {text}
         </div>
       )}

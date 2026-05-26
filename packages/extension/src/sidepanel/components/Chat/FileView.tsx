@@ -54,9 +54,9 @@ export function FileView({ content, filePath, language, maxLines = 50 }: Props) 
   };
 
   return (
-    <div className="rounded-lg border border-claude-border/50 overflow-hidden text-xs">
+    <div className="rounded-md border border-claude-border/15 overflow-hidden text-xs">
       {/* Header */}
-      <div className="flex items-center justify-between px-3 py-1.5 bg-claude-surface/80 border-b border-claude-border/50">
+      <div className="flex items-center justify-between px-3 py-1.5 bg-claude-surface border-b border-claude-border/15">
         <div className="flex items-center gap-2 min-w-0">
           <svg
             width="12"
@@ -105,14 +105,14 @@ export function FileView({ content, filePath, language, maxLines = 50 }: Props) 
           <div className="absolute bottom-0 left-0 right-0 h-12 bg-gradient-to-t from-claude-bg to-transparent flex items-end justify-center pb-1">
             <button
               onClick={() => setExpanded(true)}
-              className="text-xs text-claude-accent hover:text-claude-accent-hover bg-claude-surface px-3 py-1 rounded-full border border-claude-border/50 transition-colors"
+              className="text-xs text-claude-accent hover:text-claude-accent-hover bg-claude-surface px-3 py-1 rounded-full border border-claude-border/20 transition-colors"
             >
               Show all {lines.length} lines
             </button>
           </div>
         )}
         {isTruncated && expanded && (
-          <div className="flex justify-center py-1 border-t border-claude-border/30">
+          <div className="flex justify-center py-1 border-t border-claude-border/15">
             <button
               onClick={() => setExpanded(false)}
               className="text-xs text-claude-muted hover:text-claude-text transition-colors"

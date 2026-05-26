@@ -24,6 +24,10 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       sendResponse({ ok: false });
     }
   }
+  if (message.type === "screenshot-mode") {
+    enterScreenshotMode();
+    sendResponse({ ok: true });
+  }
 });
 
 function extractPageContext(options) {
@@ -283,12 +287,22 @@ function enterInspectMode() {
 
   const onAdd = () => {
     if (!state.selectedEl) return;
-    const selector = getStableSelector(state.selectedEl);
-    const outerHTML = state.selectedEl.outerHTML ?? "";
-    const preview = buildPreview(state.selectedEl, selector, outerHTML);
+    const el = state.selectedEl;
+    const selector = getStableSelector(el);
+    const outerHTML = el.outerHTML ?? "";
+    const rect = el.getBoundingClientRect();
+    const boundingRect = {
+      top: Math.round(rect.top),
+      left: Math.round(rect.left),
+      width: Math.round(rect.width),
+      height: Math.round(rect.height),
+    };
+    const pagePath = buildPagePath(el);
+    const nearbyText = buildNearbyText(el);
+    const preview = buildPreview(el, selector, boundingRect);
     chrome.runtime.sendMessage({
       type: "inspect-element-selected",
-      payload: { selector, outerHTML, preview },
+      payload: { selector, outerHTML, preview, boundingRect, pagePath, nearbyText },
     });
     exitInspectMode();
   };
@@ -327,16 +341,40 @@ function exitInspectMode() {
   chrome.runtime.sendMessage({ type: "inspect-mode-exited" });
 }
 
-function buildPreview(el, selector, outerHTML) {
+function buildPreview(el, selector, rect) {
   const tag = (el.tagName || "element").toLowerCase();
   const id = el.id ? `#${el.id}` : "";
   const classList = (el.classList && el.classList.length)
     ? `.${Array.from(el.classList).slice(0, 2).join(".")}`
     : "";
-  const base = `<${tag}${id}${classList} …>`;
-  const shortSelector = selector.length > 60 ? `${selector.slice(0, 57)}...` : selector;
-  const htmlLen = outerHTML.length;
-  return `${base}  (${shortSelector}, ${htmlLen} chars)`;
+  const pos = rect ? ` at (${rect.left}, ${rect.top}) ${rect.width}x${rect.height}` : "";
+  return `<${tag}${id}${classList}>${pos}`;
+}
+
+function buildPagePath(el) {
+  const parts = [];
+  let node = el;
+  while (node && node.nodeType === 1 && node !== document.documentElement) {
+    let part = node.tagName.toLowerCase();
+    if (node.id) {
+      part += `#${node.id}`;
+    } else if (node.classList && node.classList.length) {
+      const cls = Array.from(node.classList).slice(0, 2).join(".");
+      if (cls) part += `.${cls}`;
+    }
+    parts.unshift(part);
+    if (node.id) break;
+    if (parts.length >= 6) break;
+    node = node.parentElement;
+  }
+  return parts.join(" > ");
+}
+
+function buildNearbyText(el) {
+  const parent = el.parentElement;
+  if (!parent) return "";
+  const text = (parent.textContent || "").replace(/\s+/g, " ").trim();
+  return text.length > 200 ? text.slice(0, 200) + "..." : text;
 }
 
 function getStableSelector(el) {
@@ -376,4 +414,107 @@ function cssEscape(value) {
     return window.CSS.escape(value);
   }
   return String(value).replace(/[^a-zA-Z0-9_\-]/g, "\\$&");
+}
+
+// ── Area Screenshot Mode ─────────────────────────────────────
+
+let screenshotState = null;
+
+function enterScreenshotMode() {
+  if (screenshotState) return;
+  // Exit inspect mode if active
+  if (inspectState) exitInspectMode();
+
+  const host = document.createElement("div");
+  const root = host.attachShadow({ mode: "closed" });
+
+  const overlay = document.createElement("div");
+  overlay.style.cssText =
+    "position:fixed;left:0;top:0;right:0;bottom:0;cursor:crosshair;" +
+    "background:rgba(0,0,0,0.15);z-index:2147483645;pointer-events:auto;";
+
+  const hint = document.createElement("div");
+  hint.style.cssText =
+    "position:fixed;left:50%;top:16px;transform:translateX(-50%);z-index:2147483647;" +
+    "background:rgba(0,0,0,0.8);color:#fff;padding:8px 16px;border-radius:8px;" +
+    "font:13px -apple-system,sans-serif;pointer-events:none;white-space:nowrap;";
+  const isZh = (navigator.language || "").toLowerCase().startsWith("zh");
+  hint.textContent = isZh
+    ? "拖拽选择截图区域，按 Esc 取消"
+    : "Drag to select area, Esc to cancel";
+
+  const selRect = document.createElement("div");
+  selRect.style.cssText =
+    "position:fixed;pointer-events:none;z-index:2147483646;" +
+    "border:2px solid #4af;background:rgba(68,170,255,0.15);display:none;";
+
+  root.appendChild(overlay);
+  root.appendChild(selRect);
+  root.appendChild(hint);
+  document.documentElement.appendChild(host);
+
+  let startX = 0, startY = 0;
+  let dragging = false;
+
+  const onDown = (e) => {
+    startX = e.clientX;
+    startY = e.clientY;
+    dragging = true;
+    selRect.style.display = "block";
+    updateRect(e.clientX, e.clientY);
+  };
+
+  const onMove = (e) => {
+    if (!dragging) return;
+    updateRect(e.clientX, e.clientY);
+  };
+
+  const updateRect = (curX, curY) => {
+    const x = Math.min(startX, curX);
+    const y = Math.min(startY, curY);
+    const w = Math.abs(curX - startX);
+    const h = Math.abs(curY - startY);
+    selRect.style.left = x + "px";
+    selRect.style.top = y + "px";
+    selRect.style.width = w + "px";
+    selRect.style.height = h + "px";
+  };
+
+  const onUp = (e) => {
+    if (!dragging) return;
+    dragging = false;
+    const x = Math.min(startX, e.clientX);
+    const y = Math.min(startY, e.clientY);
+    const w = Math.abs(e.clientX - startX);
+    const h = Math.abs(e.clientY - startY);
+    exitScreenshotMode();
+    if (w > 10 && h > 10) {
+      chrome.runtime.sendMessage({
+        type: "screenshot-area-selected",
+        payload: { x, y, width: w, height: h },
+      });
+    }
+  };
+
+  const onKey = (e) => {
+    if (e.key === "Escape") exitScreenshotMode();
+  };
+
+  overlay.addEventListener("mousedown", onDown);
+  overlay.addEventListener("mousemove", onMove);
+  overlay.addEventListener("mouseup", onUp);
+  window.addEventListener("keydown", onKey, true);
+
+  screenshotState = { host, overlay, selRect, hint, onDown, onMove, onUp, onKey };
+}
+
+function exitScreenshotMode() {
+  if (!screenshotState) return;
+  const { host, overlay, onDown, onMove, onUp, onKey } = screenshotState;
+  overlay.removeEventListener("mousedown", onDown);
+  overlay.removeEventListener("mousemove", onMove);
+  overlay.removeEventListener("mouseup", onUp);
+  window.removeEventListener("keydown", onKey, true);
+  host.remove();
+  screenshotState = null;
 }

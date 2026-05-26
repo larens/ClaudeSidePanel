@@ -21,9 +21,9 @@ export function TerminalOutput({ command, output, exitCode, duration }: Props) {
   };
 
   return (
-    <div className="rounded-lg border border-claude-border/50 overflow-hidden text-xs">
+    <div className="rounded-md border border-claude-border/15 overflow-hidden text-xs">
       {/* Header */}
-      <div className="flex items-center gap-2 px-3 py-1.5 bg-claude-surface/80 border-b border-claude-border/50">
+      <div className="flex items-center gap-2 px-3 py-1.5 bg-claude-surface border-b border-claude-border/15">
         <svg
           width="12"
           height="12"
