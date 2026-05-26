@@ -1,0 +1,379 @@
+// Content script — injected into every page
+// Collects page context when requested by the side panel
+
+chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+  if (message.type === "extract-page-context") {
+    const context = extractPageContext(message.options);
+    sendResponse(context);
+  }
+  if (message.type === "extract-selection") {
+    sendResponse({
+      selectedText: window.getSelection()?.toString() ?? "",
+      url: window.location.href,
+      title: document.title,
+    });
+  }
+  if (message.type === "inspect-mode") {
+    if (message.action === "enter") {
+      enterInspectMode();
+      sendResponse({ ok: true });
+    } else if (message.action === "exit") {
+      exitInspectMode();
+      sendResponse({ ok: true });
+    } else {
+      sendResponse({ ok: false });
+    }
+  }
+});
+
+function extractPageContext(options) {
+  const maxLen = options?.maxLength ?? 10000;
+  const selectedText = window.getSelection()?.toString().trim() ?? "";
+  const meta = extractMeta();
+  const headings = extractHeadings();
+  const bodyText = extractMainContent(maxLen);
+  const links = options?.includeLinks ? extractLinks() : [];
+
+  return {
+    url: window.location.href,
+    title: document.title,
+    selectedText,
+    bodyText,
+    meta,
+    headings,
+    links,
+  };
+}
+
+function extractMeta() {
+  const getMeta = (name) =>
+    document.querySelector(`meta[name="${name}"], meta[property="${name}"]`)
+      ?.getAttribute("content") ?? undefined;
+
+  return {
+    description: getMeta("description") ?? getMeta("og:description"),
+    author: getMeta("author"),
+    publishDate: getMeta("article:published_time") ?? getMeta("date") ?? undefined,
+    siteName: getMeta("og:site_name"),
+    type: getMeta("og:type"),
+  };
+}
+
+function extractHeadings() {
+  const headings = [];
+  const elements = document.querySelectorAll("h1, h2, h3, h4");
+  for (const el of elements) {
+    const text = el.textContent?.trim();
+    if (text && text.length < 200) {
+      headings.push(`${el.tagName.toLowerCase()}: ${text}`);
+    }
+    if (headings.length >= 30) break;
+  }
+  return headings;
+}
+
+function extractMainContent(maxLength) {
+  const candidates = [
+    document.querySelector("article"),
+    document.querySelector("main"),
+    document.querySelector('[role="main"]'),
+    document.querySelector(".post-content, .article-content, .entry-content, .content"),
+  ];
+
+  const primary = candidates.find(Boolean);
+  if (primary) {
+    return cleanText(primary.textContent ?? "", maxLength);
+  }
+  return cleanText(document.body?.textContent ?? "", maxLength);
+}
+
+function extractLinks() {
+  const links = [];
+  const anchors = document.querySelectorAll("a[href]");
+  for (const a of anchors) {
+    const text = a.textContent?.trim();
+    const href = a.href;
+    if (text && href && !href.startsWith("javascript:") && text.length < 100) {
+      links.push({ text, href });
+    }
+    if (links.length >= 20) break;
+  }
+  return links;
+}
+
+function cleanText(text, maxLength) {
+  return text
+    .replace(/\s+/g, " ")
+    .replace(/\n\s*\n/g, "\n")
+    .trim()
+    .slice(0, maxLength);
+}
+
+let inspectState = null;
+
+function enterInspectMode() {
+  if (inspectState) return;
+
+  const isZh = (navigator.language || "").toLowerCase().startsWith("zh");
+  const t = (zh, en) => (isZh ? zh : en);
+
+  const host = document.createElement("div");
+  const root = host.attachShadow({ mode: "closed" });
+
+  const glass = document.createElement("div");
+  glass.style.position = "fixed";
+  glass.style.left = "0";
+  glass.style.top = "0";
+  glass.style.right = "0";
+  glass.style.bottom = "0";
+  glass.style.cursor = "crosshair";
+  glass.style.background = "rgba(0,0,0,0.02)";
+  glass.style.zIndex = "2147483645";
+  glass.style.pointerEvents = "auto";
+
+  const overlay = document.createElement("div");
+  overlay.style.position = "fixed";
+  overlay.style.left = "0";
+  overlay.style.top = "0";
+  overlay.style.width = "0";
+  overlay.style.height = "0";
+  overlay.style.pointerEvents = "none";
+  overlay.style.boxSizing = "border-box";
+  overlay.style.border = "2px solid rgba(212, 165, 116, 0.9)";
+  overlay.style.background = "rgba(212, 165, 116, 0.12)";
+  overlay.style.borderRadius = "6px";
+  overlay.style.zIndex = "2147483646";
+
+  const bubble = document.createElement("div");
+  bubble.style.position = "fixed";
+  bubble.style.left = "12px";
+  bubble.style.top = "12px";
+  bubble.style.display = "block";
+  bubble.style.zIndex = "2147483647";
+  bubble.style.fontFamily =
+    '-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,"Noto Sans",sans-serif';
+  bubble.style.fontSize = "12px";
+  bubble.style.color = "#111";
+
+  const bubbleCard = document.createElement("div");
+  bubbleCard.style.background = "rgba(255, 255, 255, 0.98)";
+  bubbleCard.style.border = "1px solid rgba(0,0,0,0.12)";
+  bubbleCard.style.borderRadius = "10px";
+  bubbleCard.style.padding = "10px";
+  bubbleCard.style.minWidth = "220px";
+  bubbleCard.style.boxShadow = "0 10px 30px rgba(0,0,0,0.18)";
+  bubbleCard.style.pointerEvents = "auto";
+
+  const bubbleTitle = document.createElement("div");
+  bubbleTitle.textContent = t(
+    "选择页面元素以检查",
+    "Select an element in the page to inspect it"
+  );
+  bubbleTitle.style.fontWeight = "600";
+  bubbleTitle.style.marginBottom = "8px";
+
+  const bubbleActions = document.createElement("div");
+  bubbleActions.style.display = "flex";
+  bubbleActions.style.gap = "8px";
+  bubbleActions.style.justifyContent = "flex-end";
+
+  const addBtn = document.createElement("button");
+  addBtn.type = "button";
+  addBtn.textContent = t("添加到对话", "Add to chat");
+  addBtn.disabled = true;
+  addBtn.style.border = "0";
+  addBtn.style.borderRadius = "8px";
+  addBtn.style.padding = "6px 10px";
+  addBtn.style.background = "rgb(212,165,116)";
+  addBtn.style.color = "#111";
+  addBtn.style.cursor = "pointer";
+  addBtn.style.opacity = "0.5";
+
+  const cancelBtn = document.createElement("button");
+  cancelBtn.type = "button";
+  cancelBtn.textContent = t("取消", "Cancel");
+  cancelBtn.style.border = "1px solid rgba(0,0,0,0.12)";
+  cancelBtn.style.borderRadius = "8px";
+  cancelBtn.style.padding = "6px 10px";
+  cancelBtn.style.background = "transparent";
+  cancelBtn.style.color = "#111";
+  cancelBtn.style.cursor = "pointer";
+
+  bubbleActions.appendChild(cancelBtn);
+  bubbleActions.appendChild(addBtn);
+  bubbleCard.appendChild(bubbleTitle);
+  bubbleCard.appendChild(bubbleActions);
+  bubble.appendChild(bubbleCard);
+
+  root.appendChild(glass);
+  root.appendChild(overlay);
+  root.appendChild(bubble);
+  document.documentElement.appendChild(host);
+
+  const state = {
+    host,
+    glass,
+    overlay,
+    bubble,
+    addBtn,
+    cancelBtn,
+    hoveredEl: null,
+    selectedEl: null,
+  };
+
+  const setOverlayForElement = (el) => {
+    if (!el || el === document.documentElement || el === document.body) {
+      overlay.style.width = "0";
+      overlay.style.height = "0";
+      return;
+    }
+    const rect = el.getBoundingClientRect();
+    overlay.style.left = `${Math.max(0, rect.left)}px`;
+    overlay.style.top = `${Math.max(0, rect.top)}px`;
+    overlay.style.width = `${Math.max(0, rect.width)}px`;
+    overlay.style.height = `${Math.max(0, rect.height)}px`;
+  };
+
+  const positionBubbleNearElement = (el) => {
+    const rect = el.getBoundingClientRect();
+    const left = Math.min(
+      Math.max(8, rect.left),
+      window.innerWidth - 8 - 240
+    );
+    const top = Math.min(
+      Math.max(8, rect.bottom + 8),
+      window.innerHeight - 8 - 60
+    );
+    bubble.style.left = `${left}px`;
+    bubble.style.top = `${top}px`;
+  };
+
+  const onMove = (e) => {
+    if (state.selectedEl) return;
+    const prevPointerEvents = glass.style.pointerEvents;
+    glass.style.pointerEvents = "none";
+    const target = document.elementFromPoint(e.clientX, e.clientY);
+    glass.style.pointerEvents = prevPointerEvents;
+    if (!(target instanceof Element)) return;
+    if (target === host) return;
+    state.hoveredEl = target;
+    setOverlayForElement(target);
+  };
+
+  const onClick = (e) => {
+    if (state.selectedEl) return;
+    const prevPointerEvents = glass.style.pointerEvents;
+    glass.style.pointerEvents = "none";
+    const target = document.elementFromPoint(e.clientX, e.clientY);
+    glass.style.pointerEvents = prevPointerEvents;
+    if (!(target instanceof Element)) return;
+    if (target === host) return;
+    state.selectedEl = target;
+    setOverlayForElement(target);
+    positionBubbleNearElement(target);
+    addBtn.disabled = false;
+    addBtn.style.opacity = "1";
+  };
+
+  const onKeyDown = (e) => {
+    if (e.key === "Escape") {
+      exitInspectMode();
+    }
+  };
+
+  const onAdd = () => {
+    if (!state.selectedEl) return;
+    const selector = getStableSelector(state.selectedEl);
+    const outerHTML = state.selectedEl.outerHTML ?? "";
+    const preview = buildPreview(state.selectedEl, selector, outerHTML);
+    chrome.runtime.sendMessage({
+      type: "inspect-element-selected",
+      payload: { selector, outerHTML, preview },
+    });
+    exitInspectMode();
+  };
+
+  const onCancel = () => exitInspectMode();
+
+  state.addBtn.addEventListener("click", onAdd);
+  state.cancelBtn.addEventListener("click", onCancel);
+
+  state.glass.addEventListener("mousemove", onMove);
+  state.glass.addEventListener("click", onClick);
+  window.addEventListener("keydown", onKeyDown, true);
+  const previousCursor = document.documentElement.style.cursor;
+  document.documentElement.style.cursor = "crosshair";
+
+  inspectState = {
+    state,
+    onMove,
+    onClick,
+    onKeyDown,
+    onAdd,
+    onCancel,
+    previousCursor,
+  };
+}
+
+function exitInspectMode() {
+  if (!inspectState) return;
+  const { state, onMove, onClick, onKeyDown, previousCursor } = inspectState;
+  state.glass.removeEventListener("mousemove", onMove);
+  state.glass.removeEventListener("click", onClick);
+  window.removeEventListener("keydown", onKeyDown, true);
+  document.documentElement.style.cursor = previousCursor || "";
+  state.host.remove();
+  inspectState = null;
+  chrome.runtime.sendMessage({ type: "inspect-mode-exited" });
+}
+
+function buildPreview(el, selector, outerHTML) {
+  const tag = (el.tagName || "element").toLowerCase();
+  const id = el.id ? `#${el.id}` : "";
+  const classList = (el.classList && el.classList.length)
+    ? `.${Array.from(el.classList).slice(0, 2).join(".")}`
+    : "";
+  const base = `<${tag}${id}${classList} …>`;
+  const shortSelector = selector.length > 60 ? `${selector.slice(0, 57)}...` : selector;
+  const htmlLen = outerHTML.length;
+  return `${base}  (${shortSelector}, ${htmlLen} chars)`;
+}
+
+function getStableSelector(el) {
+  if (!(el instanceof Element)) return "";
+  if (el.id) return `#${cssEscape(el.id)}`;
+  const parts = [];
+  let node = el;
+  while (node && node.nodeType === 1 && node !== document.documentElement) {
+    let part = node.tagName.toLowerCase();
+    const classes = Array.from(node.classList || [])
+      .filter((c) => c && c.length < 40)
+      .slice(0, 2)
+      .map(cssEscape);
+    if (classes.length) {
+      part += `.${classes.join(".")}`;
+    }
+    const parent = node.parentElement;
+    if (parent) {
+      const siblings = Array.from(parent.children).filter(
+        (c) => c.tagName === node.tagName
+      );
+      if (siblings.length > 1) {
+        const index = siblings.indexOf(node) + 1;
+        part += `:nth-of-type(${index})`;
+      }
+    }
+    parts.unshift(part);
+    if (node.id) break;
+    if (parts.length >= 5) break;
+    node = node.parentElement;
+  }
+  return parts.join(" > ");
+}
+
+function cssEscape(value) {
+  if (window.CSS && typeof window.CSS.escape === "function") {
+    return window.CSS.escape(value);
+  }
+  return String(value).replace(/[^a-zA-Z0-9_\-]/g, "\\$&");
+}

@@ -1,0 +1,12 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "composite": true,
+    "lib": ["ES2022"],
+    "module": "ESNext",
+    "outDir": "dist",
+    "rootDir": ".",
+    "allowSyntheticDefaultImports": true
+  },
+  "include": ["vite.config.ts", "tailwind.config.ts", "postcss.config.js"]
+}

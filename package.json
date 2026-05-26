@@ -1,0 +1,18 @@
+{
+  "name": "claudeweb",
+  "version": "0.1.0",
+  "private": true,
+  "description": "ClaudeSidePanel — Chrome sidebar extension powered by local Claude CLI",
+  "scripts": {
+    "dev": "pnpm --filter @claudeweb/extension dev",
+    "dev:bridge": "pnpm --filter @claudeweb/bridge dev",
+    "build": "pnpm --filter @claudeweb/extension build",
+    "build:bridge": "pnpm --filter @claudeweb/bridge build",
+    "lint": "eslint packages/*/src --ext .ts,.tsx",
+    "typecheck": "pnpm -r typecheck"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "packageManager": "pnpm@9.15.4"
+}
