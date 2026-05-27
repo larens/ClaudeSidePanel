@@ -1,6 +1,7 @@
 import { useSessionStore } from "@/sidepanel/stores/sessionStore";
 import { useChatStore } from "@/sidepanel/stores/chatStore";
 import { useWorkspaceStore } from "@/sidepanel/stores/workspaceStore";
+import { useConnectionStore } from "@/sidepanel/stores/connectionStore";
 import type { SessionInfo } from "@/lib/protocol";
 
 function relativeTime(dateStr: string): string {
@@ -38,6 +39,7 @@ export function Sidebar({ open, onClose }: Props) {
     loadHistoryProject,
   } = useSessionStore();
   const { workspaces, activeWorkspaceId } = useWorkspaceStore();
+  const connectionState = useConnectionStore((s) => s.state);
   const clearMessages = useChatStore((s) => s.clearMessages);
 
   if (!open) return null;
@@ -53,13 +55,20 @@ export function Sidebar({ open, onClose }: Props) {
     : [];
 
   const handleNew = async () => {
-    if (!activeWorkspace || activeWorkspace.status !== "ready") return;
+    if (!activeWorkspace || activeWorkspace.status !== "ready" || connectionState !== "connected") return;
     clearMessages();
-    await createSession({
-      cwd: activeWorkspace.path,
-      workspaceId: activeWorkspace.id,
-    });
-    onClose();
+    try {
+      await createSession({
+        cwd: activeWorkspace.path,
+        workspaceId: activeWorkspace.id,
+      });
+      onClose();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      useChatStore.getState().addSystemMessage(
+        t(`创建会话失败：${msg}`, `Failed to create session: ${msg}`)
+      );
+    }
   };
 
   const handleSelect = async (session: SessionInfo) => {
@@ -215,7 +224,7 @@ export function Sidebar({ open, onClose }: Props) {
         <div className="p-3 border-t border-claude-border">
           <button
             onClick={handleNew}
-            disabled={!activeWorkspace || activeWorkspace.status !== "ready"}
+            disabled={!activeWorkspace || activeWorkspace.status !== "ready" || connectionState !== "connected"}
             className="w-full flex items-center justify-center gap-1.5 px-3 py-2 text-sm bg-claude-accent text-claude-bg rounded-lg hover:bg-claude-accent-hover transition-colors"
           >
             <svg

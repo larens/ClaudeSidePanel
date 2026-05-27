@@ -78,11 +78,19 @@ export function Header() {
   const handleNewSession = async () => {
     if (!activeWorkspace) return;
     clearMessages();
-    await useSessionStore.getState().createSession({
-      cwd: activeWorkspace.path,
-      workspaceId: activeWorkspace.id,
-    });
-    setPanelOpen(false);
+    try {
+      await useSessionStore.getState().createSession({
+        cwd: activeWorkspace.path,
+        workspaceId: activeWorkspace.id,
+      });
+      setPanelOpen(false);
+    } catch (err) {
+      const isZh = navigator.language?.toLowerCase().startsWith("zh");
+      const msg = err instanceof Error ? err.message : String(err);
+      useChatStore.getState().addSystemMessage(
+        isZh ? `创建会话失败：${msg}` : `Failed to create session: ${msg}`
+      );
+    }
   };
 
   const handleRefreshWorkspace = async () => {

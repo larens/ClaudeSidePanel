@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { bridgeClient } from "@/lib/bridge-client";
+import { useChatStore } from "./chatStore";
 import type {
   SessionInfo,
   HistorySessionMeta,
@@ -90,40 +91,35 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
   },
 
   createSession: async (options) => {
-    try {
-      const session = await bridgeClient.send<SessionInfo>(
-        "session",
-        "session.create",
-        {
-          cwd: options?.cwd ?? "~",
-          workspaceId: options?.workspaceId,
-        }
-      );
-      const nextSessions = [...get().sessions.filter((item) => item.id !== session.id), session];
-      const nextWorkspaceSessions = { ...get().workspaceSessions };
-
-      if (options?.workspaceId) {
-        const existing = nextWorkspaceSessions[options.workspaceId] ?? {
-          sessionIds: [],
-          activeSessionId: null,
-        };
-        nextWorkspaceSessions[options.workspaceId] = {
-          sessionIds: [...existing.sessionIds.filter((id) => id !== session.id), session.id],
-          activeSessionId: session.id,
-        };
+    const session = await bridgeClient.send<SessionInfo>(
+      "session",
+      "session.create",
+      {
+        cwd: options?.cwd ?? "~",
+        workspaceId: options?.workspaceId,
       }
+    );
+    const nextSessions = [...get().sessions.filter((item) => item.id !== session.id), session];
+    const nextWorkspaceSessions = { ...get().workspaceSessions };
 
-      set({
-        sessions: nextSessions,
+    if (options?.workspaceId) {
+      const existing = nextWorkspaceSessions[options.workspaceId] ?? {
+        sessionIds: [],
+        activeSessionId: null,
+      };
+      nextWorkspaceSessions[options.workspaceId] = {
+        sessionIds: [...existing.sessionIds.filter((id) => id !== session.id), session.id],
         activeSessionId: session.id,
-        workspaceSessions: nextWorkspaceSessions,
-      });
-      await saveToStorage(nextSessions, session.id, nextWorkspaceSessions);
-      return session.id;
-    } catch (err) {
-      console.error("Failed to create session:", err);
-      return null;
+      };
     }
+
+    set({
+      sessions: nextSessions,
+      activeSessionId: session.id,
+      workspaceSessions: nextWorkspaceSessions,
+    });
+    await saveToStorage(nextSessions, session.id, nextWorkspaceSessions);
+    return session.id;
   },
 
   ensureWorkspaceSession: async (workspaceId, cwd) => {
@@ -164,6 +160,19 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
         sessionIds: [...existing.sessionIds.filter((id) => id !== sessionId), sessionId],
         activeSessionId: sessionId,
       };
+    }
+
+    // Persist current session's messages before switching
+    const prevId = get().activeSessionId;
+    if (prevId) {
+      try {
+        const msgs = useChatStore.getState().messages;
+        if (msgs.length > 0) {
+          chrome.storage.local.set({ [`claudeweb_messages_${prevId}`]: msgs });
+        }
+      } catch {
+        // ignore
+      }
     }
 
     set({ activeSessionId: sessionId, workspaceSessions: nextWorkspaceSessions });
