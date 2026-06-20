@@ -225,7 +225,7 @@ export function Sidebar({ open, onClose }: Props) {
           <button
             onClick={handleNew}
             disabled={!activeWorkspace || activeWorkspace.status !== "ready" || connectionState !== "connected"}
-            className="w-full flex items-center justify-center gap-1.5 px-3 py-2 text-sm bg-claude-accent text-claude-bg rounded-lg hover:bg-claude-accent-hover transition-colors"
+            className="w-full flex items-center justify-center gap-1.5 px-3 py-2 text-sm bg-claude-accent text-claude-bg rounded-lg hover:bg-claude-accent-hover disabled:opacity-40 disabled:hover:bg-claude-accent transition-colors"
           >
             <svg
               width="14"

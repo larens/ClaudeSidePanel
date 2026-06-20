@@ -76,14 +76,6 @@ export function ChatView() {
               )}
             </p>
           </div>
-          <div className="space-y-2 text-xs text-claude-muted">
-            <p>
-              {t("请确保本地服务已启动：", "Make sure the bridge is running:")}
-            </p>
-            <code className="inline-block px-2 py-1 bg-claude-surface rounded text-claude-accent">
-              pnpm dev:bridge
-            </code>
-          </div>
         </div>
       </div>
     );

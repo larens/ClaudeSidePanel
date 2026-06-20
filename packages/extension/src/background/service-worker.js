@@ -1,8 +1,36 @@
 // Background service worker for ClaudeSidePanel extension
 
+const NATIVE_HOST_NAME = "com.claudesidepanel.bridge";
+
+function ensureBridgeStarted() {
+  try {
+    chrome.runtime.sendNativeMessage(
+      NATIVE_HOST_NAME,
+      { action: "start-bridge" },
+      () => {
+        if (chrome.runtime.lastError) {
+          console.warn(
+            "[ClaudeSidePanel] Native bridge host unavailable:",
+            chrome.runtime.lastError.message
+          );
+        }
+      }
+    );
+  } catch (error) {
+    console.warn("[ClaudeSidePanel] Failed to start native bridge host:", error);
+  }
+}
+
+ensureBridgeStarted();
+
+chrome.runtime.onStartup.addListener(() => {
+  ensureBridgeStarted();
+});
+
 // ── Side Panel ────────────────────────────────────────────
 
 chrome.action.onClicked.addListener((tab) => {
+  ensureBridgeStarted();
   if (tab.id) {
     chrome.sidePanel.open({ tabId: tab.id });
   }
@@ -13,6 +41,8 @@ chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });
 // ── Context Menu ──────────────────────────────────────────
 
 chrome.runtime.onInstalled.addListener(() => {
+  ensureBridgeStarted();
+
   const isZh = chrome.i18n.getUILanguage().toLowerCase().startsWith("zh");
   const t = (zh, en) => (isZh ? zh : en);
 
@@ -37,6 +67,8 @@ chrome.runtime.onInstalled.addListener(() => {
 
 chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   if (!tab?.id) return;
+
+  ensureBridgeStarted();
 
   // Make sure side panel is open
   await chrome.sidePanel.open({ tabId: tab.id });

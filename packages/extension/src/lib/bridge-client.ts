@@ -8,6 +8,30 @@ import { createRequest, DEFAULT_PORT, PROTOCOL_VERSION } from "./protocol";
 import { useConnectionStore } from "@/sidepanel/stores/connectionStore";
 
 type ResponseHandler = (msg: ResponseMessage) => void;
+const NATIVE_HOST_NAME = "com.claudesidepanel.bridge";
+
+function ensureNativeBridgeStarted(): void {
+  try {
+    if (typeof chrome === "undefined" || !chrome.runtime?.sendNativeMessage) {
+      return;
+    }
+
+    chrome.runtime.sendNativeMessage(
+      NATIVE_HOST_NAME,
+      { action: "start-bridge" },
+      () => {
+        if (chrome.runtime.lastError) {
+          console.warn(
+            "[BridgeClient] Native bridge host unavailable:",
+            chrome.runtime.lastError.message
+          );
+        }
+      }
+    );
+  } catch {
+    // Native Messaging is unavailable in normal web/Vite preview contexts.
+  }
+}
 
 export class BridgeClient {
   private ws: WebSocket | null = null;
@@ -27,6 +51,8 @@ export class BridgeClient {
 
   connect() {
     if (this.ws?.readyState === WebSocket.OPEN) return;
+
+    ensureNativeBridgeStarted();
 
     const store = useConnectionStore.getState();
     store.setConnecting();

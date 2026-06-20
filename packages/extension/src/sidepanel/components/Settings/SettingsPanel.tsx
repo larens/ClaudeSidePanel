@@ -146,12 +146,6 @@ export function SettingsPanel({ open, onClose }: Props) {
                   "Browser sidebar AI assistant powered by the local Claude CLI."
                 )}
               </p>
-              <p className="pt-2">
-                {t("请确保本地服务已启动：", "Make sure the bridge is running:")}
-              </p>
-              <pre className="bg-claude-bg rounded px-2 py-1.5 text-claude-accent font-mono">
-                pnpm dev:bridge
-              </pre>
             </div>
           </Section>
         </div>

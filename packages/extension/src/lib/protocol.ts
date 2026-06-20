@@ -63,6 +63,39 @@ export interface PageContext {
   title: string;
   selectedText?: string;
   bodyText?: string;
+  meta?: PageMeta;
+  headings?: string[];
+  links?: PageLink[];
+}
+
+export interface PageContextOptions {
+  maxLength?: number;
+  includeLinks?: boolean;
+}
+
+export interface PageLink {
+  text: string;
+  href: string;
+}
+
+export interface PageMeta {
+  description?: string;
+  author?: string;
+  publishDate?: string;
+  siteName?: string;
+  type?: string;
+}
+
+export interface BrowserPageContextRequestPayload {
+  requestId: string;
+  options?: PageContextOptions;
+}
+
+export interface BrowserPageContextResultPayload {
+  requestId: string;
+  ok: boolean;
+  context?: PageContext;
+  error?: string;
 }
 
 export interface ToolCallInfo {

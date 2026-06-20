@@ -1,9 +1,18 @@
+import { randomUUID } from "node:crypto";
+import {
+  createServer,
+  type IncomingMessage,
+  type Server,
+  type ServerResponse,
+} from "node:http";
 import { WebSocketServer, type WebSocket } from "ws";
 import { mkdir, writeFile } from "node:fs/promises";
 import { resolve, sep } from "node:path";
 import { SessionManager } from "./session.js";
 import {
   createResponse,
+  type BrowserPageContextOptions,
+  type BrowserPageContextResultPayload,
   type ChatInterruptPayload,
   type FileWritePayload,
   type RequestMessage,
@@ -34,9 +43,17 @@ export interface BridgeServerOptions {
 }
 
 export class BridgeServer {
+  private httpServer: Server | null = null;
   private wss: WebSocketServer | null = null;
   private sessions = new SessionManager();
   private port: number;
+  private pageContextRequests = new Map<
+    string,
+    {
+      resolve: (payload: BrowserPageContextResultPayload) => void;
+      timer: ReturnType<typeof setTimeout>;
+    }
+  >();
 
   constructor(options: BridgeServerOptions) {
     this.port = options.port;
@@ -44,19 +61,19 @@ export class BridgeServer {
 
   start(): Promise<void> {
     return new Promise((resolve, reject) => {
-      this.wss = new WebSocketServer({
-        host: "127.0.0.1",
-        port: this.port,
+      this.httpServer = createServer((req, res) => {
+        void this.handleHttpRequest(req, res);
       });
+      this.wss = new WebSocketServer({ server: this.httpServer });
 
-      this.wss.on("listening", () => {
+      this.httpServer.on("listening", () => {
         console.log(
           `[Bridge] WebSocket server listening on ws://127.0.0.1:${this.port}`
         );
         resolve();
       });
 
-      this.wss.on("error", (err) => {
+      this.httpServer.on("error", (err) => {
         if ((err as NodeJS.ErrnoException).code === "EADDRINUSE") {
           reject(
             new Error(
@@ -89,13 +106,104 @@ export class BridgeServer {
           console.log("[Bridge] Client disconnected");
         });
       });
+
+      this.httpServer.listen(this.port, "127.0.0.1");
     });
   }
 
   stop(): void {
     this.sessions.destroy();
+    for (const { timer } of this.pageContextRequests.values()) {
+      clearTimeout(timer);
+    }
+    this.pageContextRequests.clear();
     this.wss?.close();
+    this.httpServer?.close();
     console.log("[Bridge] Server stopped");
+  }
+
+  private async handleHttpRequest(
+    req: IncomingMessage,
+    res: ServerResponse
+  ): Promise<void> {
+    if (req.method === "OPTIONS") {
+      res.writeHead(204);
+      res.end();
+      return;
+    }
+
+    if (req.method !== "GET") {
+      this.sendJson(res, 405, { error: "Method not allowed" });
+      return;
+    }
+
+    const url = new URL(req.url ?? "/", `http://${req.headers.host}`);
+    if (url.pathname !== "/browser/page-context") {
+      this.sendJson(res, 404, { error: "Not found" });
+      return;
+    }
+
+    const options = parsePageContextOptions(url.searchParams);
+    const result = await this.requestBrowserPageContext(options);
+    if (!result.ok) {
+      this.sendJson(res, 503, { error: result.error ?? "Page context unavailable" });
+      return;
+    }
+
+    this.sendJson(res, 200, result.context ?? null);
+  }
+
+  private sendJson(
+    res: ServerResponse,
+    statusCode: number,
+    payload: unknown
+  ): void {
+    res.writeHead(statusCode, { "Content-Type": "application/json; charset=utf-8" });
+    res.end(JSON.stringify(payload));
+  }
+
+  private requestBrowserPageContext(
+    options: BrowserPageContextOptions
+  ): Promise<BrowserPageContextResultPayload> {
+    const client = this.findOpenClient();
+    if (!client) {
+      return Promise.resolve({
+        requestId: "",
+        ok: false,
+        error: "No browser extension client is connected.",
+      });
+    }
+
+    const requestId = randomUUID();
+    return new Promise((resolve) => {
+      const timer = setTimeout(() => {
+        this.pageContextRequests.delete(requestId);
+        resolve({
+          requestId,
+          ok: false,
+          error: "Timed out waiting for browser page context.",
+        });
+      }, 5000);
+
+      this.pageContextRequests.set(requestId, { resolve, timer });
+      client.send(
+        JSON.stringify(
+          createResponse(requestId, "event", "browser.pageContext.request", {
+            requestId,
+            options,
+          })
+        )
+      );
+    });
+  }
+
+  private findOpenClient(): WebSocket | null {
+    for (const client of this.wss?.clients ?? []) {
+      if (client.readyState === client.OPEN) {
+        return client;
+      }
+    }
+    return null;
   }
 
   private handleMessage(ws: WebSocket, msg: RequestMessage): void {
@@ -177,6 +285,8 @@ export class BridgeServer {
       }
       contextPrefix = parts.join("\n");
     }
+
+    contextPrefix = withBrowserPageToolHint(contextPrefix, this.port);
 
     this.sessions
       .sendMessage(
@@ -376,6 +486,21 @@ export class BridgeServer {
 
   private handleSystem(ws: WebSocket, msg: RequestMessage): void {
     switch (msg.action) {
+      case "browser.pageContext.result": {
+        const payload = msg.payload as BrowserPageContextResultPayload;
+        const pending = this.pageContextRequests.get(payload.requestId);
+        if (pending) {
+          clearTimeout(pending.timer);
+          this.pageContextRequests.delete(payload.requestId);
+          pending.resolve(payload);
+        }
+        ws.send(
+          JSON.stringify(
+            createResponse(msg.id, "complete", msg.action, { received: true })
+          )
+        );
+        break;
+      }
       case "auth": {
         ws.send(
           JSON.stringify(
@@ -409,4 +534,28 @@ export class BridgeServer {
       }
     }
   }
+}
+
+function withBrowserPageToolHint(
+  contextPrefix: string | undefined,
+  port: number
+): string {
+  const hint = [
+    "[Browser Page Tool]",
+    "You can read the user's active browser tab when relevant by running:",
+    `curl -s \"http://127.0.0.1:${port}/browser/page-context?maxLength=12000&includeLinks=true\"`,
+    "The endpoint returns JSON with url, title, selectedText, bodyText, meta, headings, and links.",
+  ].join("\n");
+
+  return contextPrefix ? `${contextPrefix}\n\n${hint}` : hint;
+}
+
+function parsePageContextOptions(
+  searchParams: URLSearchParams
+): BrowserPageContextOptions {
+  const maxLength = Number(searchParams.get("maxLength") ?? "10000");
+  return {
+    maxLength: Number.isFinite(maxLength) ? Math.max(0, maxLength) : 10000,
+    includeLinks: searchParams.get("includeLinks") !== "false",
+  };
 }

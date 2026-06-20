@@ -8,6 +8,11 @@ import { useSessionStore } from "./stores/sessionStore";
 import { useSettingsStore } from "./stores/settingsStore";
 import { useWorkspaceStore } from "./stores/workspaceStore";
 import { usePersistence } from "./hooks/usePersistence";
+import type {
+  BrowserPageContextRequestPayload,
+  BrowserPageContextResultPayload,
+  PageContext,
+} from "@/lib/protocol";
 
 export default function App() {
   const connectionState = useConnectionStore((s) => s.state);
@@ -52,6 +57,27 @@ export default function App() {
     void refreshWorkspace(activeWorkspaceId);
   }, [connectionState, activeWorkspaceId, refreshWorkspace]);
 
+  // Let the local bridge request browser page context for Claude/plugin tools.
+  useEffect(() => {
+    return bridgeClient.onGlobal((msg) => {
+      if (msg.type !== "event" || msg.action !== "browser.pageContext.request") {
+        return;
+      }
+
+      const payload = msg.payload as BrowserPageContextRequestPayload;
+      void (async () => {
+        const result: BrowserPageContextResultPayload = await readCurrentPageContext(
+          payload
+        );
+        try {
+          await bridgeClient.send("system", "browser.pageContext.result", result);
+        } catch (error) {
+          console.warn("[App] Failed to send browser page context result", error);
+        }
+      })();
+    });
+  }, []);
+
   // Listen for context menu actions from background service worker
   useEffect(() => {
     const handler = (message: {
@@ -95,4 +121,31 @@ export default function App() {
       <ChatInput />
     </div>
   );
+}
+
+async function readCurrentPageContext(
+  payload: BrowserPageContextRequestPayload
+): Promise<BrowserPageContextResultPayload> {
+  try {
+    const context = (await chrome.runtime.sendMessage({
+      type: "get-page-context",
+      options: payload.options ?? { maxLength: 10000, includeLinks: true },
+    })) as PageContext | null;
+
+    if (!context) {
+      return {
+        requestId: payload.requestId,
+        ok: false,
+        error: "Could not access the active page. Refresh the page and try again.",
+      };
+    }
+
+    return { requestId: payload.requestId, ok: true, context };
+  } catch (error) {
+    return {
+      requestId: payload.requestId,
+      ok: false,
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
 }

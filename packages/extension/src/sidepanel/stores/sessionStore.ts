@@ -36,6 +36,7 @@ interface SessionStore {
   deleteSession: (sessionId: string) => Promise<void>;
   removeWorkspaceSessions: (workspaceId: string) => Promise<void>;
   setActiveSession: (sessionId: string | null) => void;
+  updateSessionTitle: (sessionId: string, title: string) => Promise<void>;
   hideSession: (sessionId: string) => Promise<void>;
   loadHistoryProject: (encodedPath: string, projectName: string) => Promise<void>;
   activateHistorySession: (sessionId: string, cwd: string, projectPath: string) => Promise<void>;
@@ -235,6 +236,16 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
     set({ activeSessionId: sessionId });
   },
 
+  updateSessionTitle: async (sessionId, title) => {
+    const nextSessions = get().sessions.map((session) =>
+      session.id === sessionId && !session.title
+        ? { ...session, title }
+        : session
+    );
+    set({ sessions: nextSessions });
+    await saveToStorage(nextSessions, get().activeSessionId, get().workspaceSessions);
+  },
+
   hideSession: async (sessionId) => {
     const next = [...get().hiddenSessionIds, sessionId];
     set({ hiddenSessionIds: next });
@@ -299,7 +310,11 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       };
 
       const updatedWorkspaces = wsExists
-        ? workspaces.map((w: { id: string }) => w.id === workspaceId ? { ...w, lastUsedAt: Date.now() } : w)
+        ? workspaces.map((w: { id: string }) =>
+            w.id === workspaceId
+              ? { ...w, name: projectName, path: decodedPath, status: "ready" as const, lastUsedAt: Date.now() }
+              : w
+          )
         : [...workspaces, newWorkspace];
 
       const updatedRecent = [

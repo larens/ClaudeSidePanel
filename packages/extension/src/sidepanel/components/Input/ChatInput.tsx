@@ -21,6 +21,21 @@ function extractTag(text: string): string {
   return "<el>";
 }
 
+function buildSessionTitle(text: string): string {
+  const firstLine = text
+    .split("\n")
+    .map((line) => line.trim())
+    .find((line) => line && !line.startsWith("/")) ?? "";
+
+  const title = firstLine
+    .replace(/`/g, "")
+    .replace(/\.claudeweb\/attachments\/\S+/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  return title.length > 40 ? `${title.slice(0, 40)}…` : title;
+}
+
 
 export function ChatInput() {
   const isZh = navigator.language?.toLowerCase().startsWith("zh");
@@ -86,6 +101,11 @@ export function ChatInput() {
           .getState()
           .addSystemMessage(t("创建会话失败", "Failed to create session"));
         return;
+      }
+
+      const title = buildSessionTitle(text);
+      if (title) {
+        void useSessionStore.getState().updateSessionTitle(sessionId, title);
       }
 
       const assistantId = startAssistantMessage();

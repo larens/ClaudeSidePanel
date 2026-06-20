@@ -3,6 +3,7 @@
   "name": "ClaudeSidePanel",
   "description": "基于本地 Claude CLI 的浏览器侧边栏助手",
   "version": "0.1.0",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAz0pEW+yy0zEvBolZXW0mjpa8ouTqX8HYp8+46RO+/CT+PfzJEX8d7EBfYVxYsjxmHMheK6vqmXBkh5LCF5W9OelvWZ/jh9wyctH4qekDQ5UUZmKTOrfTC3qpnycFIXcVH+yUSj3y0GLxEvKhOS7UnodAKCacClZFNvqhFj67yXuqD2DO6qnqRZc0nlXm9wOcJ2eiT/qJdD9xay34CNiUyyptbp45rcrdx9kZHL1M8q+JaFT4+xc87bICxQ7giiBEOev8rLh/O4zIjiL8Y2giWZAZebFCJDBiIlde+KTK53wxG1mVhfOIvhDqPVPk6UoEU3Zosy/B/XocIyVIdZorpQIDAQAB",
   "side_panel": {
     "default_path": "sidepanel.html"
   },
@@ -10,7 +11,8 @@
     "sidePanel",
     "storage",
     "tabs",
-    "contextMenus"
+    "contextMenus",
+    "nativeMessaging"
   ],
   "host_permissions": [
     "http://127.0.0.1:*",

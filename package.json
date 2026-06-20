@@ -8,6 +8,7 @@
     "dev:bridge": "pnpm --filter @claudeweb/bridge dev",
     "build": "pnpm --filter @claudeweb/extension build",
     "build:bridge": "pnpm --filter @claudeweb/bridge build",
+    "install:native-host": "pnpm build:bridge && node scripts/install-native-host.mjs",
     "lint": "eslint packages/*/src --ext .ts,.tsx",
     "typecheck": "pnpm -r typecheck"
   },
