@@ -1,4 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 DIR="$(cd "$(dirname "$0")/.." && pwd)"
-exec node "$DIR/dist/native-host.js"
+NODE_BIN="${CLAUDESIDEPANEL_NODE:-/opt/homebrew/Cellar/node/25.8.2/bin/node}"
+if [ ! -x "$NODE_BIN" ]; then
+  NODE_BIN="$(command -v node)"
+fi
+exec "$NODE_BIN" "$DIR/dist/native-host.js"

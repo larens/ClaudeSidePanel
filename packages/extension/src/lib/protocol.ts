@@ -66,6 +66,7 @@ export interface PageContext {
   meta?: PageMeta;
   headings?: string[];
   links?: PageLink[];
+  frames?: PageFrame[];
 }
 
 export interface PageContextOptions {
@@ -76,6 +77,12 @@ export interface PageContextOptions {
 export interface PageLink {
   text: string;
   href: string;
+}
+
+export interface PageFrame {
+  url: string;
+  title: string;
+  isFrame?: boolean;
 }
 
 export interface PageMeta {

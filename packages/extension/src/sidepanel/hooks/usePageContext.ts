@@ -20,7 +20,7 @@ export function usePageContext(): PageContextResult {
     try {
       const result = await chrome.runtime.sendMessage({
         type: "get-page-context",
-        options: { maxLength: 10000 },
+        options: { maxLength: 12000, includeLinks: true },
       });
 
       if (!result) {
@@ -33,6 +33,10 @@ export function usePageContext(): PageContextResult {
         title: result.title,
         selectedText: result.selectedText || undefined,
         bodyText: result.bodyText || undefined,
+        meta: result.meta || undefined,
+        headings: result.headings || undefined,
+        links: result.links || undefined,
+        frames: result.frames || undefined,
       };
 
       setContext(ctx);
@@ -80,8 +84,41 @@ export function buildContextPrefix(ctx: PageContext): string {
     parts.push(`\nSelected text:\n"${ctx.selectedText}"`);
   }
 
+  if (ctx.meta) {
+    const metaParts = [
+      ctx.meta.description ? `Description: ${ctx.meta.description}` : null,
+      ctx.meta.siteName ? `Site: ${ctx.meta.siteName}` : null,
+      ctx.meta.author ? `Author: ${ctx.meta.author}` : null,
+      ctx.meta.publishDate ? `Published: ${ctx.meta.publishDate}` : null,
+      ctx.meta.type ? `Type: ${ctx.meta.type}` : null,
+    ].filter(Boolean);
+    if (metaParts.length) parts.push(`\nMetadata:\n${metaParts.join("\n")}`);
+  }
+
+  if (ctx.headings?.length) {
+    parts.push(`\nPage headings:\n${ctx.headings.join("\n")}`);
+  }
+
+  if (ctx.frames?.length && ctx.frames.length > 1) {
+    parts.push(
+      `\nPage frames:\n${ctx.frames
+        .slice(0, 10)
+        .map((frame) => `- ${frame.title || "Untitled"}: ${frame.url}`)
+        .join("\n")}`
+    );
+  }
+
   if (ctx.bodyText) {
     parts.push(`\nPage content:\n${ctx.bodyText}`);
+  }
+
+  if (ctx.links?.length) {
+    parts.push(
+      `\nVisible links:\n${ctx.links
+        .slice(0, 20)
+        .map((link) => `- ${link.text}: ${link.href}`)
+        .join("\n")}`
+    );
   }
 
   return parts.join("\n");

@@ -13,6 +13,7 @@ import type {
   BrowserPageContextResultPayload,
   PageContext,
 } from "@/lib/protocol";
+import { buildContextPrefix } from "./hooks/usePageContext";
 
 export default function App() {
   const connectionState = useConnectionStore((s) => s.state);
@@ -92,13 +93,23 @@ export default function App() {
       const { action, text, url, title } = message;
 
       if (action === "summarize") {
-        window.dispatchEvent(
-          new CustomEvent("claude-web-auto-send", {
-            detail: {
-              prompt: `Please summarize the content of this web page.\n\nURL: ${url}\nTitle: ${title}`,
-            },
-          })
-        );
+        void (async () => {
+          const result = await readCurrentPageContext({
+            requestId: "context-menu-summarize",
+            options: { maxLength: 12000, includeLinks: true },
+          });
+          window.dispatchEvent(
+            new CustomEvent("claude-web-auto-send", {
+              detail: {
+                prompt: "Please summarize the content of this web page.",
+                contextPrefix: result.context
+                  ? buildContextPrefix(result.context)
+                  : `URL: ${url}\nTitle: ${title}`,
+                autoSubmit: true,
+              },
+            })
+          );
+        })();
       } else if (action === "ask" && text) {
         window.dispatchEvent(
           new CustomEvent("claude-web-auto-send", {

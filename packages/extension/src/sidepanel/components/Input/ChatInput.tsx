@@ -11,6 +11,7 @@ import { useSessionStore } from "@/sidepanel/stores/sessionStore";
 import { useWorkspaceStore } from "@/sidepanel/stores/workspaceStore";
 import { bridgeClient } from "@/lib/bridge-client";
 import type { FileWritePayload, ToolCallInfo } from "@/lib/protocol";
+import { buildContextPrefix, usePageContext } from "@/sidepanel/hooks/usePageContext";
 
 function extractTag(text: string): string {
   // Extract tag name from selector like "#id > div.class" or preview like "<button.btn …>"
@@ -50,7 +51,9 @@ export function ChatInput() {
   const speechRef = useRef<unknown>(null);
   const [isRecording, setIsRecording] = useState(false);
   const [isInspecting, setIsInspecting] = useState(false);
+  const [includePageContext, setIncludePageContext] = useState(false);
   const [pendingScreenshot, setPendingScreenshot] = useState<string | null>(null);
+  const { fetchContext, loading: pageContextLoading } = usePageContext();
   const {
     addUserMessage,
     startAssistantMessage,
@@ -488,7 +491,7 @@ export function ChatInput() {
       if (!detail?.prompt) return;
 
       if (detail.autoSubmit && canSend) {
-        doSend(detail.prompt);
+        doSend(detail.prompt, detail.contextPrefix);
       } else {
         setMessage(detail.prompt);
         setTimeout(() => textareaRef.current?.focus(), 50);
@@ -530,8 +533,19 @@ export function ChatInput() {
     if (!finalText.trim()) return;
     setMessage("");
     if (textareaRef.current) textareaRef.current.style.height = "auto";
-    doSend(finalText);
-  }, [message, pendingScreenshot, canSend, doSend, stopCurrent, writeFileToWorkspace, t]);
+    let contextPrefix: string | undefined;
+    if (includePageContext) {
+      const pageContext = await fetchContext();
+      if (pageContext) {
+        contextPrefix = buildContextPrefix(pageContext);
+      } else {
+        useChatStore
+          .getState()
+          .addSystemMessage(t("读取当前页面失败，请刷新网页后重试", "Failed to read the current page. Refresh the page and try again."));
+      }
+    }
+    doSend(finalText, contextPrefix);
+  }, [message, pendingScreenshot, canSend, doSend, stopCurrent, writeFileToWorkspace, includePageContext, fetchContext, t]);
 
   const handleKeyDown = (e: ReactKeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Escape" && isStreaming) {
@@ -612,6 +626,36 @@ export function ChatInput() {
               className="hidden"
               onChange={handleFileChange}
             />
+            <button
+              onClick={() => setIncludePageContext((value) => !value)}
+              disabled={!canUseWorkspace || pageContextLoading}
+              className={`p-2 rounded-lg transition-colors disabled:opacity-40 ${
+                includePageContext
+                  ? "text-claude-accent border-claude-accent/40 bg-claude-accent/10"
+                  : "text-claude-muted hover:text-claude-text hover:bg-claude-border/30"
+              }`}
+              title={
+                includePageContext
+                  ? t("已包含当前登录页面内容", "Current signed-in page content included")
+                  : t("读取当前页面", "Read current page")
+              }
+            >
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
+                <path d="M4 4.5A2.5 2.5 0 0 1 6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5z" />
+                <line x1="8" y1="7" x2="16" y2="7" />
+                <line x1="8" y1="11" x2="16" y2="11" />
+              </svg>
+            </button>
             <button
               onClick={() => void toggleInspectMode()}
               className={`p-2 rounded-lg transition-colors ${

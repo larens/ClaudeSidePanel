@@ -115,7 +115,8 @@ export class CLISession extends EventEmitter {
 
     this.messageCount++;
 
-    this.process = spawn("claude", args, {
+    const claudePath = process.env.CLAUDE_CLI_PATH || "claude";
+    this.process = spawn(claudePath, args, {
       cwd: this.cwd,
       env: { ...process.env },
       stdio: ["pipe", "pipe", "pipe"],
@@ -127,6 +128,7 @@ export class CLISession extends EventEmitter {
           "error",
           new Error(
             "Claude CLI not found. Install with: npm install -g @anthropic-ai/claude-code"
+            + ` (tried: ${claudePath})`
           )
         );
       } else {

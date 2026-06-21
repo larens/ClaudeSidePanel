@@ -107,20 +107,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === "get-page-context") {
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
       if (tabs[0]?.id) {
-        chrome.tabs.sendMessage(
-          tabs[0].id,
-          {
-            type: "extract-page-context",
-            options: message.options,
-          },
-          (response) => {
-            if (chrome.runtime.lastError) {
-              sendResponse(null);
-            } else {
-              sendResponse(response);
-            }
-          }
-        );
+        collectPageContextFromFrames(tabs[0].id, message.options, sendResponse);
       } else {
         sendResponse(null);
       }
@@ -200,3 +187,77 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 });
+
+function collectPageContextFromFrames(tabId, options, sendResponse) {
+  chrome.webNavigation.getAllFrames({ tabId }, (frames) => {
+    const frameIds = (frames ?? [])
+      .map((frame) => frame.frameId)
+      .filter((frameId) => typeof frameId === "number");
+
+    if (frameIds.length === 0) {
+      sendResponse(null);
+      return;
+    }
+
+    const contexts = [];
+    let remaining = frameIds.length;
+    const finish = () => {
+      remaining -= 1;
+      if (remaining === 0) sendResponse(mergePageContexts(contexts, options));
+    };
+
+    for (const frameId of frameIds) {
+      chrome.tabs.sendMessage(
+        tabId,
+        { type: "extract-page-context", options, frameId },
+        { frameId },
+        (response) => {
+          if (!chrome.runtime.lastError && response) contexts.push(response);
+          finish();
+        }
+      );
+    }
+  });
+}
+
+function mergePageContexts(contexts, options) {
+  if (contexts.length === 0) return null;
+
+  const primary = contexts.find((ctx) => !ctx.isFrame) ?? contexts[0];
+  const maxLength = options?.maxLength ?? 12000;
+  const seenText = new Set();
+  const bodyParts = [];
+  const headings = [];
+  const links = [];
+
+  for (const ctx of contexts) {
+    const label = ctx.isFrame ? `Frame: ${ctx.title || ctx.url}` : "Main page";
+    const bodyText = String(ctx.bodyText ?? "").trim();
+    if (bodyText && !seenText.has(bodyText)) {
+      seenText.add(bodyText);
+      bodyParts.push(`[${label}]\n${bodyText}`);
+    }
+    if (Array.isArray(ctx.headings)) headings.push(...ctx.headings);
+    if (Array.isArray(ctx.links)) links.push(...ctx.links);
+  }
+
+  return {
+    ...primary,
+    bodyText: bodyParts.join("\n\n").slice(0, maxLength),
+    headings: Array.from(new Set(headings)).slice(0, 60),
+    links: dedupeLinks(links).slice(0, 40),
+    frames: contexts.map((ctx) => ({ url: ctx.url, title: ctx.title, isFrame: ctx.isFrame })),
+  };
+}
+
+function dedupeLinks(links) {
+  const seen = new Set();
+  const result = [];
+  for (const link of links) {
+    const key = `${link.text}\n${link.href}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    result.push(link);
+  }
+  return result;
+}

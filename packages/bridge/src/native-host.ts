@@ -41,7 +41,11 @@ async function ensureBridge(): Promise<void> {
 
   bridgeProcess = spawn(process.execPath, [new URL("./index.js", import.meta.url).pathname], {
     detached: true,
-    env: { ...process.env, CLAUDE_WEB_PORT: String(port) },
+    env: {
+      ...process.env,
+      CLAUDE_WEB_PORT: String(port),
+      CLAUDE_CLI_PATH: process.env.CLAUDE_CLI_PATH ?? "__CLAUDE_CLI_PATH__",
+    },
     stdio: "ignore",
   });
   bridgeProcess.unref();

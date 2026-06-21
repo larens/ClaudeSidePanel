@@ -167,6 +167,7 @@ function extractPageContext(options) {
   return {
     url: window.location.href,
     title: document.title,
+    isFrame: window.top !== window,
     selectedText,
     bodyText,
     meta,
@@ -191,9 +192,9 @@ function extractMeta() {
 
 function extractHeadings() {
   const headings = [];
-  const elements = document.querySelectorAll("h1, h2, h3, h4");
+  const elements = document.querySelectorAll('h1, h2, h3, h4, [role="heading"], [aria-level]');
   for (const el of elements) {
-    const text = el.textContent?.trim();
+    const text = getElementText(el, 200);
     if (text && text.length < 200) {
       headings.push(`${el.tagName.toLowerCase()}: ${text}`);
     }
@@ -207,14 +208,23 @@ function extractMainContent(maxLength) {
     document.querySelector("article"),
     document.querySelector("main"),
     document.querySelector('[role="main"]'),
+    document.querySelector("#root"),
+    document.querySelector("#app"),
+    document.querySelector(".app"),
     document.querySelector(".post-content, .article-content, .entry-content, .content"),
-  ];
+  ].filter(Boolean);
 
-  const primary = candidates.find(Boolean);
+  const visibleCandidates = candidates
+    .concat(Array.from(document.querySelectorAll('[class*="content"], [class*="main"], [class*="review"], [class*="preview"], [class*="container"]')))
+    .filter(isVisibleElement);
+  const primary = visibleCandidates
+    .map((el) => ({ el, text: getElementText(el, maxLength * 2) }))
+    .filter((item) => item.text.length > 0)
+    .sort((a, b) => b.text.length - a.text.length)[0];
   if (primary) {
-    return cleanText(primary.textContent ?? "", maxLength);
+    return cleanText(primary.text, maxLength);
   }
-  return cleanText(document.body?.textContent ?? "", maxLength);
+  return cleanText(getElementText(document.body, maxLength * 2), maxLength);
 }
 
 function extractLinks() {
@@ -237,6 +247,62 @@ function cleanText(text, maxLength) {
     .replace(/\n\s*\n/g, "\n")
     .trim()
     .slice(0, maxLength);
+}
+
+function getElementText(root, maxLength) {
+  if (!root) return "";
+  const parts = [];
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT, {
+    acceptNode(node) {
+      if (node.nodeType === Node.TEXT_NODE) {
+        const parent = node.parentElement;
+        if (!parent || !isVisibleElement(parent)) return NodeFilter.FILTER_REJECT;
+        return node.textContent?.trim() ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT;
+      }
+
+      if (node.nodeType === Node.ELEMENT_NODE) {
+        const el = node;
+        const tag = el.tagName?.toLowerCase();
+        if (["script", "style", "noscript", "svg", "canvas"].includes(tag)) {
+          return NodeFilter.FILTER_REJECT;
+        }
+        return isVisibleElement(el) ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT;
+      }
+
+      return NodeFilter.FILTER_REJECT;
+    },
+  });
+
+  let node;
+  while ((node = walker.nextNode())) {
+    if (parts.join(" ").length >= maxLength) break;
+    if (node.nodeType === Node.TEXT_NODE) {
+      parts.push(node.textContent.trim());
+      continue;
+    }
+
+    const el = node;
+    const tag = el.tagName?.toLowerCase();
+    if (tag === "input" || tag === "textarea") {
+      const value = el.value || el.placeholder || el.getAttribute("aria-label");
+      if (value) parts.push(value);
+    } else {
+      const aria = el.getAttribute("aria-label");
+      const title = el.getAttribute("title");
+      if (aria) parts.push(aria);
+      if (title && title !== aria) parts.push(title);
+    }
+  }
+
+  return cleanText(parts.join("\n"), maxLength);
+}
+
+function isVisibleElement(el) {
+  if (!el || !(el instanceof Element)) return false;
+  const style = window.getComputedStyle(el);
+  if (style.display === "none" || style.visibility === "hidden" || style.opacity === "0") return false;
+  const rect = el.getBoundingClientRect();
+  return rect.width > 0 && rect.height > 0;
 }
 
 let inspectState = null;

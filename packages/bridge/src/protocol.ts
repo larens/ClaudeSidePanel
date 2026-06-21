@@ -53,6 +53,13 @@ export interface BrowserPageContext {
   meta?: BrowserPageMeta;
   headings?: string[];
   links?: BrowserPageLink[];
+  frames?: BrowserPageFrame[];
+}
+
+export interface BrowserPageFrame {
+  url: string;
+  title: string;
+  isFrame?: boolean;
 }
 
 export interface BrowserPageContextResultPayload {

@@ -286,8 +286,6 @@ export class BridgeServer {
       contextPrefix = parts.join("\n");
     }
 
-    contextPrefix = withBrowserPageToolHint(contextPrefix, this.port);
-
     this.sessions
       .sendMessage(
         sessionId,
@@ -534,20 +532,6 @@ export class BridgeServer {
       }
     }
   }
-}
-
-function withBrowserPageToolHint(
-  contextPrefix: string | undefined,
-  port: number
-): string {
-  const hint = [
-    "[Browser Page Tool]",
-    "You can read the user's active browser tab when relevant by running:",
-    `curl -s \"http://127.0.0.1:${port}/browser/page-context?maxLength=12000&includeLinks=true\"`,
-    "The endpoint returns JSON with url, title, selectedText, bodyText, meta, headings, and links.",
-  ].join("\n");
-
-  return contextPrefix ? `${contextPrefix}\n\n${hint}` : hint;
 }
 
 function parsePageContextOptions(
